@@ -35,19 +35,22 @@ ROLES = [
     {
         "key": "cuidador",
         "label": "Cuidador",
-        "icon": "\U0001f464",   # 👤
+        "color": "#3b82f6",
+        "abbr": "C",
         "silhouette": "adult",
     },
     {
         "key": "nino",
         "label": "Niño",
-        "icon": "\U0001f9d2",   # 🧒
+        "color": "#10b981",
+        "abbr": "N",
         "silhouette": "child",
     },
     {
         "key": "panoramica",
         "label": "Panorámica",
-        "icon": "\U0001f5bc",   # 🖼
+        "color": "#7c3aed",
+        "abbr": "P",
         "silhouette": "panoramic",
     },
 ]
@@ -291,21 +294,21 @@ class MainWindow(QMainWindow):
         vbox_t.setSpacing(0)
         vbox_t.setContentsMargins(6, 0, 0, 0)
         lbl_brand = QLabel("LabTREM")
-        lbl_brand.setStyleSheet("font-size:10px;font-weight:700;color:#94a3b8;letter-spacing:2px;")
+        lbl_brand.setStyleSheet("font-size:9px;font-weight:700;color:#94a3b8;letter-spacing:3.5px;")
         lbl_name = QLabel("Orquestador Multicámara")
-        lbl_name.setStyleSheet("font-size:17px;font-weight:700;color:#0f172a;")
+        lbl_name.setStyleSheet("font-size:17px;font-weight:700;color:#0f172a;letter-spacing:-0.3px;")
         vbox_t.addWidget(lbl_brand)
         vbox_t.addWidget(lbl_name)
         h.addLayout(vbox_t)
 
         h.addStretch()
 
-        btn_open = QPushButton("🗂  Abrir carpeta")
+        btn_open = QPushButton("Abrir carpeta")
         btn_open.setObjectName("btn_secondary")
         btn_open.clicked.connect(self._open_output_dir)
         h.addWidget(btn_open)
 
-        btn_refresh = QPushButton("↻  Actualizar cámaras")
+        btn_refresh = QPushButton("Actualizar cámaras")
         btn_refresh.setObjectName("btn_secondary")
         btn_refresh.clicked.connect(self._refresh_cameras)
         h.addWidget(btn_refresh)
@@ -323,11 +326,8 @@ class MainWindow(QMainWindow):
 
         # Título del panel
         title_row = QHBoxLayout()
-        lbl_icon = QLabel("🔗")
-        lbl_icon.setStyleSheet("font-size:15px;")
-        title_row.addWidget(lbl_icon)
         lbl_title = QLabel("Conexión de cámaras")
-        lbl_title.setStyleSheet("font-size:13px;font-weight:700;color:#0f172a;")
+        lbl_title.setStyleSheet("font-size:13px;font-weight:700;color:#0f172a;letter-spacing:0.2px;")
         title_row.addWidget(lbl_title)
         title_row.addStretch()
         vbox.addLayout(title_row)
@@ -348,10 +348,14 @@ class MainWindow(QMainWindow):
         h.setContentsMargins(4, 2, 4, 2)
         h.setSpacing(12)
 
-        icon = QLabel(role["icon"])
-        icon.setFixedWidth(26)
-        icon.setStyleSheet("font-size:16px;")
-        h.addWidget(icon)
+        pill = QLabel(role["abbr"])
+        pill.setFixedSize(26, 26)
+        pill.setAlignment(Qt.AlignCenter)
+        pill.setStyleSheet(
+            f"background:{role['color']};color:#ffffff;font-size:11px;"
+            "font-weight:700;border-radius:6px;"
+        )
+        h.addWidget(pill)
 
         lbl = QLabel(role["label"])
         lbl.setFixedWidth(92)
@@ -409,15 +413,18 @@ class MainWindow(QMainWindow):
         hh = QHBoxLayout(header)
         hh.setContentsMargins(12, 0, 12, 0)
         hh.setSpacing(8)
-        hh.addWidget(QLabel(role["icon"]))
+        accent = QFrame()
+        accent.setFixedSize(4, 18)
+        accent.setStyleSheet(f"background:{role['color']};border-radius:2px;")
+        hh.addWidget(accent)
         lbl = QLabel(role["label"])
-        lbl.setStyleSheet("font-size:12px;font-weight:600;color:#475569;")
+        lbl.setStyleSheet("font-size:12px;font-weight:700;color:#334155;letter-spacing:0.2px;")
         hh.addWidget(lbl)
         hh.addStretch()
 
         # Botón invertir solo en Panorámica
         if role["key"] == "panoramica":
-            self._btn_flip = QPushButton("⇄  Invertir")
+            self._btn_flip = QPushButton("Invertir")
             self._btn_flip.setObjectName("btn_flip")
             self._btn_flip.setFixedHeight(22)
             self._btn_flip.setToolTip("Intercambia la posición del adulto y el niño en la silueta")
@@ -453,7 +460,7 @@ class MainWindow(QMainWindow):
         h.addWidget(self._chk_silhouette)
 
         # Contador de grabación visible
-        self._lbl_timer = QLabel("⏺  00:00")
+        self._lbl_timer = QLabel("REC  00:00")
         self._lbl_timer.setObjectName("rec_timer_label")
         self._lbl_timer.setFixedHeight(46)
         self._lbl_timer.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
@@ -462,7 +469,7 @@ class MainWindow(QMainWindow):
 
         h.addStretch()
 
-        self._btn_connect = QPushButton("↺  Reconectar todo")
+        self._btn_connect = QPushButton("Reconectar todo")
         self._btn_connect.setObjectName("btn_connect")
         self._btn_connect.setFixedHeight(46)
         self._btn_connect.setToolTip(
@@ -472,14 +479,14 @@ class MainWindow(QMainWindow):
         self._btn_connect.clicked.connect(self._connect_cameras)
         h.addWidget(self._btn_connect)
 
-        self._btn_record = QPushButton("⏺  Grabar")
+        self._btn_record = QPushButton("Grabar")
         self._btn_record.setObjectName("btn_record")
         self._btn_record.setFixedHeight(46)
         self._btn_record.setEnabled(False)
         self._btn_record.clicked.connect(self._start_recording)
         h.addWidget(self._btn_record)
 
-        self._btn_stop = QPushButton("⏹  Detener")
+        self._btn_stop = QPushButton("Detener")
         self._btn_stop.setObjectName("btn_stop")
         self._btn_stop.setFixedHeight(46)
         self._btn_stop.setEnabled(False)
@@ -620,10 +627,10 @@ class MainWindow(QMainWindow):
         self._btn_record.setEnabled(False)
         self._btn_stop.setEnabled(True)
         self._btn_connect.setEnabled(False)
-        self._lbl_timer.setText("⏺  00:00")
+        self._lbl_timer.setText("REC  00:00")
         self._lbl_timer.show()
         self._rec_timer.start()
-        self._status_bar.showMessage(f"⏺  Grabando  —  Destino: {self._output_dir}")
+        self._status_bar.showMessage(f"REC — Grabando  |  Destino: {self._output_dir}")
 
     def _stop_recording(self) -> None:
         self._rec_timer.stop()
@@ -662,7 +669,7 @@ class MainWindow(QMainWindow):
 
         n = len(self._recording_paths)
         self._toast.show_message(
-            f"✅  Grabación guardada correctamente\n"
+            f"Grabación guardada correctamente\n"
             f"{n} archivo(s) en:\n{self._output_dir}",
             duration_ms=6000,
         )
@@ -672,9 +679,9 @@ class MainWindow(QMainWindow):
             secs = int((datetime.datetime.now() - self._rec_start).total_seconds())
             m, s = divmod(secs, 60)
             time_str = f"{m:02d}:{s:02d}"
-            self._lbl_timer.setText(f"⏺  {time_str}")
+            self._lbl_timer.setText(f"REC  {time_str}")
             self._status_bar.showMessage(
-                f"⏺  Grabando  {time_str}  —  Destino: {self._output_dir}"
+                f"REC — Grabando  {time_str}  |  Destino: {self._output_dir}"
             )
 
     # ═════════════════════════════════════════════════════════════════════════
@@ -685,7 +692,7 @@ class MainWindow(QMainWindow):
         self._panoramic_flipped = not self._panoramic_flipped
         stype = "panoramic_flipped" if self._panoramic_flipped else "panoramic"
         self._widgets["panoramica"].set_silhouette_type(stype)
-        self._btn_flip.setText("⇄  Normal" if self._panoramic_flipped else "⇄  Invertir")
+        self._btn_flip.setText("Vista normal" if self._panoramic_flipped else "Invertir")
 
     def _toggle_silhouette(self, state: int) -> None:
         visible = state == Qt.Checked
@@ -716,7 +723,7 @@ class MainWindow(QMainWindow):
             """
 /* ── Base ─────────────────────────────────────────────── */
 QMainWindow, QWidget {
-    background: #f8fafc;
+    background: #f0f4f8;
     font-family: 'Segoe UI', 'Inter', 'Arial', sans-serif;
     font-size: 13px;
     color: #1e293b;
@@ -725,18 +732,18 @@ QMainWindow, QWidget {
 /* ── Panel de conexión ───────────────────────────────── */
 QGroupBox#connection_panel {
     background: #ffffff;
-    border: 1px solid #e2e8f0;
+    border: 1px solid #dde3ed;
     border-radius: 12px;
 }
 
 /* ── Tarjeta de vista ────────────────────────────────── */
 QWidget#view_card {
     background: #ffffff;
-    border: 1px solid #e2e8f0;
+    border: 1px solid #dde3ed;
     border-radius: 12px;
 }
 QWidget#view_card_header {
-    background: #f8fafc;
+    background: #ffffff;
     border-top-left-radius: 12px;
     border-top-right-radius: 12px;
 }
@@ -744,13 +751,13 @@ QWidget#view_card_header {
 /* ── Combo de cámaras ────────────────────────────────── */
 QComboBox#camera_combo {
     background: #ffffff;
-    border: 1px solid #cbd5e1;
+    border: 1.5px solid #cbd5e1;
     border-radius: 7px;
     padding: 5px 10px;
     color: #1e293b;
     selection-background-color: #eff6ff;
 }
-QComboBox#camera_combo:hover  { border-color: #2563eb; }
+QComboBox#camera_combo:hover  { border-color: #3b82f6; }
 QComboBox#camera_combo::drop-down {
     border: none;
     width: 20px;
@@ -769,58 +776,62 @@ QPushButton#btn_connect {
     color: #2563eb;
     border: 2px solid #2563eb;
     border-radius: 10px;
-    padding: 0 28px;
+    padding: 0 26px;
     font-size: 13px;
     font-weight: 600;
-    min-width: 170px;
+    min-width: 160px;
+    letter-spacing: 0.2px;
 }
-QPushButton#btn_connect:hover   { background: #eff6ff; }
+QPushButton#btn_connect:hover   { background: #eff6ff; border-color: #1d4ed8; color: #1d4ed8; }
 QPushButton#btn_connect:pressed { background: #dbeafe; }
-QPushButton#btn_connect:disabled { color: #93c5fd; border-color: #93c5fd; }
+QPushButton#btn_connect:disabled { color: #93c5fd; border-color: #bfdbfe; }
 
 QPushButton#btn_record {
-    background: #ef4444;
+    background: #dc2626;
     color: #ffffff;
     border: none;
     border-radius: 10px;
-    padding: 0 28px;
-    font-size: 13px;
-    font-weight: 600;
-    min-width: 140px;
-}
-QPushButton#btn_record:hover   { background: #dc2626; }
-QPushButton#btn_record:disabled { background: #fca5a5; }
-
-QPushButton#btn_stop {
-    background: #94a3b8;
-    color: #ffffff;
-    border: none;
-    border-radius: 10px;
-    padding: 0 28px;
+    padding: 0 26px;
     font-size: 13px;
     font-weight: 600;
     min-width: 130px;
+    letter-spacing: 0.2px;
 }
-QPushButton#btn_stop:hover   { background: #64748b; }
+QPushButton#btn_record:hover   { background: #b91c1c; }
+QPushButton#btn_record:disabled { background: #fca5a5; color: #fee2e2; }
+
+QPushButton#btn_stop {
+    background: #475569;
+    color: #ffffff;
+    border: none;
+    border-radius: 10px;
+    padding: 0 26px;
+    font-size: 13px;
+    font-weight: 600;
+    min-width: 120px;
+    letter-spacing: 0.2px;
+}
+QPushButton#btn_stop:hover   { background: #334155; }
 QPushButton#btn_stop:disabled { background: #e2e8f0; color: #94a3b8; }
 
 /* ── Botones secundarios ─────────────────────────────── */
 QPushButton#btn_secondary {
     background: #ffffff;
-    color: #475569;
-    border: 1px solid #cbd5e1;
+    color: #334155;
+    border: 1.5px solid #cbd5e1;
     border-radius: 7px;
-    padding: 5px 14px;
+    padding: 5px 16px;
     font-size: 12px;
+    font-weight: 500;
 }
-QPushButton#btn_secondary:hover   { background: #f1f5f9; }
-QPushButton#btn_secondary:pressed { background: #e2e8f0; }
+QPushButton#btn_secondary:hover   { background: #f8fafc; border-color: #94a3b8; color: #1e293b; }
+QPushButton#btn_secondary:pressed { background: #e9eff7; }
 
 /* ── Checkbox ────────────────────────────────────────── */
 QCheckBox { color: #475569; font-size: 13px; }
 QCheckBox::indicator {
     width: 17px; height: 17px;
-    border: 2px solid #cbd5e1;
+    border: 1.5px solid #cbd5e1;
     border-radius: 5px;
     background: #ffffff;
 }
@@ -829,35 +840,38 @@ QCheckBox::indicator:checked {
     border-color: #2563eb;
     image: url(none);
 }
+
 /* ── Botón flip panorámica ──────────────────────────── */
 QPushButton#btn_flip {
     background: transparent;
-    color: #2563eb;
-    border: 1px solid #bfdbfe;
+    color: #4f46e5;
+    border: 1px solid #c4b5fd;
     border-radius: 5px;
-    padding: 0 8px;
+    padding: 0 10px;
     font-size: 11px;
     font-weight: 600;
 }
-QPushButton#btn_flip:hover   { background: #eff6ff; }
-QPushButton#btn_flip:pressed { background: #dbeafe; }
+QPushButton#btn_flip:hover   { background: #f5f3ff; border-color: #818cf8; }
+QPushButton#btn_flip:pressed { background: #ede9fe; }
 
 /* ── Timer de grabación ─────────────────────────────── */
 QLabel#rec_timer_label {
-    color: #ef4444;
-    font-size: 18px;
+    color: #dc2626;
+    font-size: 16px;
     font-weight: 700;
-    padding: 0 14px;
-    border: 2px solid #ef4444;
+    padding: 0 18px;
+    border: 2px solid #dc2626;
     border-radius: 9px;
     background: #fff1f2;
+    letter-spacing: 1.5px;
 }
+
 /* ── Barra de estado ─────────────────────────────────── */
 QStatusBar {
-    background: #f1f5f9;
+    background: #e9eff7;
     color: #64748b;
     font-size: 12px;
-    border-top: 1px solid #e2e8f0;
+    border-top: 1px solid #dde3ed;
 }
 """
         )
