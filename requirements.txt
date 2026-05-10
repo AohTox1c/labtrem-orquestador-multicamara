@@ -1,0 +1,6 @@
+PyQt5>=5.15.0
+opencv-python>=4.5.0
+numpy>=1.19.0
+sounddevice>=0.4.0
+av>=11.0.0
+imageio-ffmpeg>=0.4.9
