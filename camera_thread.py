@@ -136,7 +136,7 @@ class CameraThread(QThread):
             self.msleep(interval_ms)
 
         cap.release()
-        self._stop_writer()
+        self._close_writer()
 
     # ── Grabación ─────────────────────────────────────────────────────────────
 
