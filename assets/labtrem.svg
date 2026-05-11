@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <clipPath id="c"><circle cx="32" cy="32" r="31"/></clipPath>
+  </defs>
+  <circle cx="32" cy="32" r="31" fill="#1c1008"/>
+  <g clip-path="url(#c)" font-family="'Arial Black',Arial" font-weight="900">
+    <text x="9" y="21" font-size="10" fill="#ffffff" letter-spacing="-0.5">lab</text>
+    <text x="5"  y="51" font-size="23" fill="#ffffff">TR</text>
+    <text x="34" y="51" font-size="23" fill="#9ec8e0">E</text>
+    <text x="49" y="51" font-size="23" fill="#ffffff">M</text>
+  </g>
+</svg>
