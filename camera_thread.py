@@ -85,18 +85,18 @@ class CameraThread(QThread):
                 self._running = False
                 return
 
-        # FPS inicial del driver (se reemplazará con la medición real más abajo)
+        # FPS del driver tras negociar MJPEG — fiable en este punto
         fps = cap.get(cv2.CAP_PROP_FPS)
         self._actual_fps = fps if fps and fps > 0 else TARGET_FPS
 
         # Warm-up: esperar hasta obtener un frame válido
         last_frame = None
-        for _ in range(10):
+        for _ in range(20):
             ret, frame = cap.read()
             if ret and frame is not None and frame.size > 0:
                 last_frame = frame
                 break
-            self.msleep(150)
+            self.msleep(100)
 
         if last_frame is None:
             self.error_occurred.emit(f"La cámara {self.camera_index} no responde")
@@ -105,22 +105,10 @@ class CameraThread(QThread):
             self._running = False
             return
 
-        # Dimensiones reales del frame capturado
         self._frame_size = (last_frame.shape[1], last_frame.shape[0])
-
-        # Medir FPS real cronometrando 30 frames (cap.get(FPS) suele mentir)
-        t0 = time.perf_counter()
-        ok = 0
-        for _ in range(30):
-            r, _ = cap.read()
-            if r:
-                ok += 1
-        elapsed = time.perf_counter() - t0
-        if ok > 2 and elapsed > 0:
-            self._actual_fps = ok / elapsed
-        fps_clamped = max(10.0, min(60.0, self._actual_fps))
-
-        interval_ms = max(10, int(1000 / fps_clamped))
+        # Todas las cámaras corren a TARGET_FPS para máxima sincronización
+        self._actual_fps = TARGET_FPS
+        interval_ms = int(1000 / TARGET_FPS)  # 33 ms
         self.connected.emit(True)
 
         consecutive_errors = 0
@@ -249,7 +237,7 @@ class CameraThread(QThread):
 
         # Warm-up
         last_frame = None
-        for _ in range(8):
+        for _ in range(10):
             try:
                 arr = picam.capture_array("main")
                 if arr is not None and arr.size > 0:
@@ -257,7 +245,7 @@ class CameraThread(QThread):
                     break
             except Exception:
                 pass
-            self.msleep(200)
+            self.msleep(100)
 
         if last_frame is None:
             picam.stop()
@@ -268,22 +256,9 @@ class CameraThread(QThread):
             return
 
         self._frame_size = (last_frame.shape[1], last_frame.shape[0])
-
-        # Medir FPS real
-        t0 = time.perf_counter()
-        ok = 0
-        for _ in range(30):
-            try:
-                arr = picam.capture_array("main")
-                if arr is not None:
-                    ok += 1
-            except Exception:
-                pass
-        elapsed = time.perf_counter() - t0
-        if ok > 2 and elapsed > 0:
-            self._actual_fps = ok / elapsed
-        fps_clamped = max(10.0, min(60.0, self._actual_fps))
-        interval_ms = max(10, int(1000 / fps_clamped))
+        # Todas las cámaras corren a TARGET_FPS para máxima sincronización
+        self._actual_fps = TARGET_FPS
+        interval_ms = int(1000 / TARGET_FPS)  # 33 ms
         self.connected.emit(True)
 
         consecutive_errors = 0
