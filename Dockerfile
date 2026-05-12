@@ -55,10 +55,11 @@ WORKDIR /app
 # ── Dependencias Python ───────────────────────────────────────────────────────
 COPY requirements.txt .
 
-# En ARM64 usamos el opencv del sistema (ya instalado arriba),
-# así que excluimos opencv-python del pip para no duplicar
+# Exponer los paquetes del sistema (python3-pyqt5, python3-opencv) al Python 3.12
+ENV PYTHONPATH=/usr/lib/python3/dist-packages
+
+# En ARM64 usamos el opencv y PyQt5 del sistema (ya instalados arriba)
 RUN pip install --no-cache-dir \
-    PyQt5>=5.15.0 \
     numpy>=1.19.0 \
     sounddevice>=0.4.0 \
     av>=11.0.0 \
