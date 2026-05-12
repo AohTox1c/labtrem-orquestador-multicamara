@@ -19,6 +19,7 @@ except ImportError:
     _AVAILABLE = False
 
 SAMPLE_RATE = 44100
+_FALLBACK_RATES = [44100, 48000, 22050, 16000]
 CHANNELS = 1  # mono
 
 
@@ -33,6 +34,7 @@ class AudioRecorder:
         self._frames: list = []
         self._stream = None
         self._wav_path: str | None = None
+        self._sample_rate: int = SAMPLE_RATE
 
     def start(self) -> None:
         """Inicia la captura de audio."""
@@ -41,13 +43,27 @@ class AudioRecorder:
         self._frames = []
         fd, self._wav_path = tempfile.mkstemp(suffix="_labtrem_audio.wav")
         os.close(fd)
-        self._stream = sd.InputStream(
-            samplerate=SAMPLE_RATE,
-            channels=CHANNELS,
-            dtype="int16",
-            callback=self._callback,
-        )
-        self._stream.start()
+
+        last_err = None
+        for rate in _FALLBACK_RATES:
+            try:
+                self._stream = sd.InputStream(
+                    samplerate=rate,
+                    channels=CHANNELS,
+                    dtype="int16",
+                    callback=self._callback,
+                )
+                self._stream.start()
+                self._sample_rate = rate
+                return
+            except Exception as e:
+                last_err = e
+                self._stream = None
+                continue
+
+        # No supported rate found — disable audio silently
+        self.available = False
+        print(f"[AudioRecorder] No supported sample rate found, audio disabled. Last error: {last_err}")
 
     def _callback(self, indata, frames, time_info, status) -> None:
         self._frames.append(indata.copy())
@@ -68,7 +84,7 @@ class AudioRecorder:
         with wave.open(self._wav_path, "wb") as wf:
             wf.setnchannels(CHANNELS)
             wf.setsampwidth(2)          # int16 = 2 bytes por muestra
-            wf.setframerate(SAMPLE_RATE)
+            wf.setframerate(self._sample_rate)
             wf.writeframes(data.tobytes())
         return self._wav_path
 
