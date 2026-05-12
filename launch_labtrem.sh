@@ -18,6 +18,7 @@ docker run --rm \
   -e LIBCAMERA_LOG_LEVELS='*:FATAL' \
   -v /tmp/.X11-unix:/tmp/.X11-unix \
   -v /run/udev:/run/udev:ro \
+  -v /dev/dma_heap:/dev/dma_heap \
   -v "$VIDEO_DIR":"$VIDEO_DIR" \
   labtrem
 
