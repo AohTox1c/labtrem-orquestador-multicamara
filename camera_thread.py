@@ -214,17 +214,9 @@ class CameraThread(QThread):
             return
 
         # 1920x1080 es el máximo que cabe en la memoria DMA del contenedor Docker.
-        # ScalerCrop al tamaño completo del sensor → campo visual máximo (sin zoom).
-        # Sin esto libcamera recorta el centro del sensor (zoom digital involuntario).
-        try:
-            sensor_res = picam.camera_properties.get("PixelArraySize", (3280, 2464))
-            full_crop = (0, 0, int(sensor_res[0]), int(sensor_res[1]))
-        except Exception:
-            full_crop = (0, 0, 3280, 2464)
-
         config = picam.create_video_configuration(
             main={"format": "RGB888", "size": (TARGET_WIDTH, TARGET_HEIGHT)},
-            controls={"FrameRate": float(TARGET_FPS), "ScalerCrop": full_crop},
+            controls={"FrameRate": float(TARGET_FPS)},
         )
         picam.configure(config)
         try:
@@ -234,6 +226,15 @@ class CameraThread(QThread):
             self.connected.emit(False)
             self._running = False
             return
+
+        # Aplicar ScalerCrop DESPUÉS de start() — es el único momento en que
+        # libcamera lo acepta. Usa el sensor completo → campo visual máximo.
+        try:
+            sensor_res = picam.camera_properties.get("PixelArraySize", (3280, 2464))
+            full_crop = (0, 0, int(sensor_res[0]), int(sensor_res[1]))
+            picam.set_controls({"ScalerCrop": full_crop})
+        except Exception:
+            pass  # Si falla, continúa con el FOV por defecto
 
         # Warm-up
         last_frame = None
