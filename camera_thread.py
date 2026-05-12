@@ -76,12 +76,17 @@ class CameraThread(QThread):
                 self._running = False
                 return
 
-            # 1080p MJPEG — C920 soporta 1080p@30fps en MJPEG.
+            # 720p MJPEG — límite real del bus USB con dos C920 simultáneas.
+            # A 1080p (~20 Mbps cada una) el controlador USB 2.0 no puede reservar
+            # suficiente ancho de banda isocrónicamente y la primera cámara pierde frames.
+            # 720p MJPEG (~8 Mbps) cabe perfectamente en el bus. Con el bug del
+            # double-sleep corregido, corre a 30fps reales (antes corría a ~15fps).
             MJPG = cv2.VideoWriter_fourcc(*'MJPG')
             cap.set(cv2.CAP_PROP_FOURCC, MJPG)
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH,  TARGET_WIDTH)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, TARGET_HEIGHT)
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1280)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT,  720)
             cap.set(cv2.CAP_PROP_FPS, TARGET_FPS)
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # mínimo buffer → menos latencia
 
             accepted = int(cap.get(cv2.CAP_PROP_FOURCC))
             if accepted != MJPG:
