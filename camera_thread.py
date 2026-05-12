@@ -213,9 +213,12 @@ class CameraThread(QThread):
             self._running = False
             return
 
-        # 1920x1080 es el máximo que cabe en la memoria DMA del contenedor Docker.
+        # 1640×1232 = modo binning 2×2 del IMX219 → usa el sensor COMPLETO.
+        # 1920×1080 usa un recorte central del sensor (FOV reducido ~1.7×).
+        # 1640×1232 y 1920×1080 ocupan casi la misma memoria DMA (~6 MB) → no hay OOM.
+        PICAM_W, PICAM_H = 1640, 1232
         config = picam.create_video_configuration(
-            main={"format": "RGB888", "size": (TARGET_WIDTH, TARGET_HEIGHT)},
+            main={"format": "RGB888", "size": (PICAM_W, PICAM_H)},
             controls={"FrameRate": float(TARGET_FPS)},
         )
         picam.configure(config)
@@ -227,14 +230,12 @@ class CameraThread(QThread):
             self._running = False
             return
 
-        # Aplicar ScalerCrop DESPUÉS de start() — es el único momento en que
-        # libcamera lo acepta. Usa el sensor completo → campo visual máximo.
+        # ScalerCrop al sensor completo como refuerzo (después de start es donde tiene efecto)
         try:
             sensor_res = picam.camera_properties.get("PixelArraySize", (3280, 2464))
-            full_crop = (0, 0, int(sensor_res[0]), int(sensor_res[1]))
-            picam.set_controls({"ScalerCrop": full_crop})
+            picam.set_controls({"ScalerCrop": (0, 0, int(sensor_res[0]), int(sensor_res[1]))})
         except Exception:
-            pass  # Si falla, continúa con el FOV por defecto
+            pass
 
         # Warm-up
         last_frame = None
