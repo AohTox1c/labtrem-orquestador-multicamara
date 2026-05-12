@@ -8,6 +8,9 @@ import subprocess
 
 import cv2
 
+# Los índices >= PICAMERA2_OFFSET corresponden a cámaras CSI via Picamera2
+PICAMERA2_OFFSET = 1000
+
 
 def detect_cameras(max_index: int = 10) -> list[tuple[int, str]]:
     """
@@ -19,6 +22,7 @@ def detect_cameras(max_index: int = 10) -> list[tuple[int, str]]:
 
     if system == "Linux":
         cameras = _detect_linux()
+        cameras += _detect_picamera2()  # añadir cámaras CSI si existen
     elif system == "Windows":
         cameras = _detect_windows(max_index)
     else:
@@ -142,3 +146,22 @@ def _detect_generic(max_index: int) -> list[tuple[int, str]]:
                 cameras.append((idx, f"Cámara {idx}"))
         cap.release()
     return cameras
+
+
+# ── Picamera2 (CSI — Raspberry Pi) ───────────────────────────────────────────
+
+def _detect_picamera2() -> list[tuple[int, str]]:
+    """Detecta cámaras CSI via Picamera2 (solo Raspberry Pi)."""
+    try:
+        from picamera2 import Picamera2  # type: ignore
+        cam_info = Picamera2.global_camera_info()
+        result = []
+        for info in cam_info:
+            num   = info.get("Num", 0)
+            model = info.get("Model", "Pi Camera")
+            idx   = PICAMERA2_OFFSET + num
+            name  = f"Pi Camera {num} — {model} (CSI)"
+            result.append((idx, name))
+        return result
+    except Exception:
+        return []

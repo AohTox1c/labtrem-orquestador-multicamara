@@ -20,6 +20,9 @@ TARGET_WIDTH = 1920
 TARGET_HEIGHT = 1080
 TARGET_FPS = 30
 
+# Índices >= PICAMERA2_OFFSET → cámara CSI via Picamera2
+PICAMERA2_OFFSET = 1000
+
 
 class CameraThread(QThread):
     """Hilo de captura de una sola cámara."""
@@ -46,7 +49,14 @@ class CameraThread(QThread):
 
     def run(self) -> None:
         self._running = True
+        if self.camera_index >= PICAMERA2_OFFSET:
+            self._run_picamera2()
+        else:
+            self._run_v4l2()
 
+    # ── Bucle V4L2 / OpenCV ───────────────────────────────────────────────────
+
+    def _run_v4l2(self) -> None:
         cap = cv2.VideoCapture(self.camera_index, _BACKEND)
         if not cap.isOpened():
             self.error_occurred.emit(
@@ -181,6 +191,121 @@ class CameraThread(QThread):
                     pass
                 self._container = None
                 self._av_stream = None
+
+    # ── Bucle Picamera2 (cámara CSI Raspberry Pi) ─────────────────────────────
+
+    def _run_picamera2(self) -> None:
+        try:
+            from picamera2 import Picamera2  # type: ignore
+        except ImportError:
+            self.error_occurred.emit("Picamera2 no disponible en el contenedor")
+            self.connected.emit(False)
+            self._running = False
+            return
+
+        cam_idx = self.camera_index - PICAMERA2_OFFSET
+        try:
+            picam = Picamera2(cam_idx)
+        except Exception as exc:
+            self.error_occurred.emit(f"No se pudo abrir Pi Camera {cam_idx}: {exc}")
+            self.connected.emit(False)
+            self._running = False
+            return
+
+        config = picam.create_preview_configuration(
+            main={"format": "RGB888", "size": (TARGET_WIDTH, TARGET_HEIGHT)}
+        )
+        picam.configure(config)
+        try:
+            picam.start()
+        except Exception as exc:
+            self.error_occurred.emit(f"Pi Camera {cam_idx} no arranca: {exc}")
+            self.connected.emit(False)
+            self._running = False
+            return
+
+        # Warm-up
+        last_frame = None
+        for _ in range(8):
+            try:
+                arr = picam.capture_array("main")
+                if arr is not None and arr.size > 0:
+                    last_frame = arr
+                    break
+            except Exception:
+                pass
+            self.msleep(200)
+
+        if last_frame is None:
+            picam.stop()
+            picam.close()
+            self.error_occurred.emit(f"Pi Camera {cam_idx}: sin respuesta")
+            self.connected.emit(False)
+            self._running = False
+            return
+
+        self._frame_size = (last_frame.shape[1], last_frame.shape[0])
+
+        # Medir FPS real
+        t0 = time.perf_counter()
+        ok = 0
+        for _ in range(30):
+            try:
+                arr = picam.capture_array("main")
+                if arr is not None:
+                    ok += 1
+            except Exception:
+                pass
+        elapsed = time.perf_counter() - t0
+        if ok > 2 and elapsed > 0:
+            self._actual_fps = ok / elapsed
+        fps_clamped = max(10.0, min(60.0, self._actual_fps))
+        interval_ms = max(10, int(1000 / fps_clamped))
+        self.connected.emit(True)
+
+        consecutive_errors = 0
+        while self._running:
+            try:
+                rgb = picam.capture_array("main")  # ya viene en RGB888
+            except Exception:
+                consecutive_errors += 1
+                if consecutive_errors >= 15:
+                    self.error_occurred.emit(f"Pi Camera {cam_idx}: señal perdida")
+                    break
+                self.msleep(50)
+                continue
+
+            if rgb is None or rgb.size == 0:
+                consecutive_errors += 1
+                if consecutive_errors >= 15:
+                    self.error_occurred.emit(f"Pi Camera {cam_idx}: señal perdida")
+                    break
+                self.msleep(50)
+                continue
+            consecutive_errors = 0
+
+            # Grabación con PyAV (mismo pipeline que V4L2)
+            with self._lock:
+                if self._recording and self._av_stream is not None:
+                    try:
+                        av_frame = av.VideoFrame.from_ndarray(rgb, format="rgb24")
+                        av_frame = av_frame.reformat(format="yuv420p")
+                        raw_pts = int((time.perf_counter() - self._rec_t0) * self._fps_int)
+                        av_frame.pts = max(raw_pts, self._last_pts + 1)
+                        self._last_pts = av_frame.pts
+                        for packet in self._av_stream.encode(av_frame):
+                            self._container.mux(packet)
+                    except Exception:
+                        pass
+
+            # Picamera2 entrega RGB; convertir a BGR para _frame_to_pixmap
+            bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+            self.frame_ready.emit(_frame_to_pixmap(bgr))
+            self.msleep(interval_ms)
+
+        picam.stop()
+        picam.close()
+        self._close_writer()
 
     # ── Control ───────────────────────────────────────────────────────────────
 

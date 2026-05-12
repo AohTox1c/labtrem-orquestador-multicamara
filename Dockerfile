@@ -39,6 +39,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxcb-cursor0 \
     # OpenCV en ARM (más estable vía apt en la Pi)
     python3-opencv \
+    # Picamera2 para la cámara CSI oficial de Raspberry Pi
+    python3-picamera2 \
+    python3-libcamera \
     # Audio (sounddevice requiere PortAudio)
     libportaudio2 \
     portaudio19-dev \

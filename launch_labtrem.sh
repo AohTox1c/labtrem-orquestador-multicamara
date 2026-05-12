@@ -10,14 +10,19 @@ export DISPLAY="${DISPLAY:-:0}"
 # Permitir que Docker dibuje en el display
 xhost +local:docker
 
-# Construir flags de dispositivos de video solo si existen
-VIDEO_FLAGS=""
-for dev in /dev/video0 /dev/video1 /dev/video2; do
-    [ -e "$dev" ] && VIDEO_FLAGS="$VIDEO_FLAGS --device $dev"
+# Pasar todos los nodos de video, media y cámara CSI al contenedor
+DEVICE_FLAGS=""
+for dev in /dev/video* /dev/media*; do
+    [ -c "$dev" ] && DEVICE_FLAGS="$DEVICE_FLAGS --device $dev"
+done
+# Dispositivos específicos de la Pi (libcamera / ISP)
+for dev in /dev/dma_heap/linux,cma /dev/rpivid-hevcmem /dev/vcsm-cma; do
+    [ -e "$dev" ] && DEVICE_FLAGS="$DEVICE_FLAGS --device $dev"
 done
 
 docker run --rm \
   -e DISPLAY="$DISPLAY" \
   -v /tmp/.X11-unix:/tmp/.X11-unix \
-  $VIDEO_FLAGS \
+  --group-add video \
+  $DEVICE_FLAGS \
   labtrem
