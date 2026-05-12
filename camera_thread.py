@@ -4,6 +4,7 @@ QThread que captura frames de una cámara y los emite como señales Qt.
 Grabación de video en H.264/MP4 real usando PyAV (binding oficial de FFmpeg).
 """
 import platform
+import queue
 import time
 import threading
 
@@ -51,6 +52,8 @@ class CameraThread(QThread):
         # Evento que se activa cuando _close_writer() termina (para UI no bloqueante)
         self._writer_closed = threading.Event()
         self._writer_closed.set()  # inicialmente "cerrado" (sin grabación activa)
+        # Cola de frames para el hilo de encoding (desacopla captura de encoding)
+        self._encode_queue: "queue.Queue | None" = None
 
     # ── Ciclo principal ───────────────────────────────────────────────────────
 
@@ -79,15 +82,13 @@ class CameraThread(QThread):
                 self._running = False
                 return
 
-            # 720p MJPEG — límite real del bus USB con dos C920 simultáneas.
-            # A 1080p (~20 Mbps cada una) el controlador USB 2.0 no puede reservar
-            # suficiente ancho de banda isocrónicamente y la primera cámara pierde frames.
-            # 720p MJPEG (~8 Mbps) cabe perfectamente en el bus. Con el bug del
-            # double-sleep corregido, corre a 30fps reales (antes corría a ~15fps).
+            # 1080p MJPEG. Cada C920 debe estar en un puerto USB 3.0 azul distinto
+            # del RPi5 — así cada puerto tiene su propio Transaction Translator y
+            # ~480 Mbps de ancho de banda independiente.
             MJPG = cv2.VideoWriter_fourcc(*'MJPG')
             cap.set(cv2.CAP_PROP_FOURCC, MJPG)
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1280)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT,  720)
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH,  TARGET_WIDTH)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, TARGET_HEIGHT)
             cap.set(cv2.CAP_PROP_FPS, TARGET_FPS)
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # mínimo buffer → menos latencia
 
@@ -140,23 +141,14 @@ class CameraThread(QThread):
                 continue
             consecutive_errors = 0
 
-            # Grabación con PyAV — pts basado en tiempo real del reloj
-            with self._lock:
-                if self._recording and self._av_stream is not None:
-                    try:
-                        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        av_frame = av.VideoFrame.from_ndarray(rgb, format="rgb24")
-                        av_frame = av_frame.reformat(format="yuv420p")
-                        # pts = tiempo real transcurrido * fps_del_stream
-                        # Esto garantiza duración exacta independientemente de la
-                        # tasa real de entrega de frames de la cámara
-                        raw_pts = int((time.perf_counter() - self._rec_t0) * self._fps_int)
-                        av_frame.pts = max(raw_pts, self._last_pts + 1)
-                        self._last_pts = av_frame.pts
-                        for packet in self._av_stream.encode(av_frame):
-                            self._container.mux(packet)
-                    except Exception:
-                        pass
+            # Poner el frame en la cola del encoder (no bloqueante).
+            # El encoder corre en su propio hilo → cap.read() nunca espera al H.264.
+            if self._encode_queue is not None:
+                ts = time.perf_counter()
+                try:
+                    self._encode_queue.put_nowait((frame.copy(), ts))
+                except queue.Full:
+                    pass  # encoder va lento → descartar frame antes que bloquear
 
             self.frame_ready.emit(_frame_to_pixmap(frame))
 
@@ -166,20 +158,21 @@ class CameraThread(QThread):
     # ── Grabación ─────────────────────────────────────────────────────────────
 
     def start_recording(self, output_path: str) -> None:
-        """Abre un contenedor MP4 con H.264 vía PyAV."""
+        """Abre un contenedor MP4 y arranca el hilo encoder independiente."""
         w, h = self._frame_size
-        fps = max(5.0, min(60.0, self._actual_fps))
-        fps_int = int(round(fps))
+        fps_int = int(round(max(5.0, min(60.0, self._actual_fps))))
         try:
             container = av.open(output_path, mode="w")
             stream    = container.add_stream("h264", rate=fps_int)
             stream.width   = w
             stream.height  = h
             stream.pix_fmt = "yuv420p"
-            # CRF 18 = alta calidad para análisis clínico.
-            # ultrafast: encoding ~5x más rápido que fast en ARM → el bucle
-            # de captura no se bloquea y los videos salen a 30fps reales.
+            # CRF 18 = alta calidad. ultrafast = mínima latencia de encoding en ARM.
             stream.options = {"crf": "18", "preset": "ultrafast"}
+
+            eq: queue.Queue = queue.Queue(maxsize=10)
+            self._encode_queue = eq
+
             with self._lock:
                 self._container = container
                 self._av_stream = stream
@@ -187,31 +180,74 @@ class CameraThread(QThread):
                 self._rec_t0    = time.perf_counter()
                 self._last_pts  = -1
                 self._recording = True
+
+            # Hilo encoder: lee frames de la cola y los escribe al MP4.
+            # Al estar separado del hilo de captura, cap.read() nunca espera al H.264.
+            self._writer_closed.clear()
+            threading.Thread(
+                target=self._encoder_loop,
+                args=(eq, container, stream, fps_int),
+                daemon=True,
+            ).start()
+
         except Exception as exc:
             self.error_occurred.emit(f"No se pudo crear el video: {exc}")
 
-    def stop_recording(self) -> None:
-        """Señaliza el fin de grabación. El flush se hace en un hilo aparte
-        para no bloquear la UI. Consultar _writer_closed.is_set() para saber
-        cuándo el archivo MP4 está completamente cerrado."""
-        with self._lock:
-            self._recording = False
-        self._writer_closed.clear()
-        threading.Thread(target=self._close_writer, daemon=True).start()
-
-    def _close_writer(self) -> None:
-        with self._lock:
-            if self._container is not None:
+    def _encoder_loop(self, eq: "queue.Queue", container, stream, fps_int: int) -> None:
+        """Hilo dedicado al encoding H.264. Lee (frame_bgr, timestamp) de la cola."""
+        rec_t0 = self._rec_t0
+        last_pts = -1
+        try:
+            while True:
+                item = eq.get()
+                if item is None:
+                    break  # sentinel → fin de grabación
+                frame_bgr, ts = item
                 try:
-                    if self._av_stream is not None:
-                        for packet in self._av_stream.encode():
-                            self._container.mux(packet)
-                    self._container.close()
+                    # V4L2 entrega BGR; Picamera2 también (RGB888 = BGR en bytes)
+                    av_frame = av.VideoFrame.from_ndarray(frame_bgr, format="bgr24")
+                    av_frame = av_frame.reformat(format="yuv420p")
+                    raw_pts = int((ts - rec_t0) * fps_int)
+                    av_frame.pts = max(raw_pts, last_pts + 1)
+                    last_pts = av_frame.pts
+                    with self._lock:
+                        if self._container is not None:
+                            for packet in stream.encode(av_frame):
+                                container.mux(packet)
                 except Exception:
                     pass
-                self._container = None
-                self._av_stream = None
-        self._writer_closed.set()  # notifica que el archivo ya está cerrado
+        finally:
+            # Flush y cerrar
+            try:
+                with self._lock:
+                    if self._container is not None:
+                        for packet in stream.encode():
+                            container.mux(packet)
+                        container.close()
+                        self._container = None
+                        self._av_stream = None
+            except Exception:
+                pass
+            self._writer_closed.set()
+
+    def stop_recording(self) -> None:
+        """Señaliza el fin de grabación. El flush MP4 ocurre en el hilo encoder."""
+        with self._lock:
+            self._recording = False
+        eq = self._encode_queue
+        self._encode_queue = None
+        if eq is not None:
+            eq.put(None)  # sentinel → el encoder hace flush y cierra
+
+    def _close_writer(self) -> None:
+        """Llamado al final del bucle de captura si la grabación ya terminó."""
+        eq = self._encode_queue
+        self._encode_queue = None
+        if eq is not None:
+            eq.put(None)
+        # Si no hay encoder activo, marcar como cerrado directamente
+        elif not self._recording:
+            self._writer_closed.set()
 
     # ── Bucle Picamera2 (cámara CSI Raspberry Pi) ─────────────────────────────
 
@@ -310,19 +346,12 @@ class CameraThread(QThread):
             # y a PyAV como "bgr24" para grabación con colores correctos.
             bgr = rgb  # los bytes ya están en BGR
 
-            # Grabación con PyAV (mismo pipeline que V4L2)
-            with self._lock:
-                if self._recording and self._av_stream is not None:
-                    try:
-                        av_frame = av.VideoFrame.from_ndarray(bgr, format="bgr24")
-                        av_frame = av_frame.reformat(format="yuv420p")
-                        raw_pts = int((time.perf_counter() - self._rec_t0) * self._fps_int)
-                        av_frame.pts = max(raw_pts, self._last_pts + 1)
-                        self._last_pts = av_frame.pts
-                        for packet in self._av_stream.encode(av_frame):
-                            self._container.mux(packet)
-                    except Exception:
-                        pass
+            if self._encode_queue is not None:
+                ts = time.perf_counter()
+                try:
+                    self._encode_queue.put_nowait((bgr.copy(), ts))
+                except queue.Full:
+                    pass
 
             self.frame_ready.emit(_frame_to_pixmap(bgr))
 
