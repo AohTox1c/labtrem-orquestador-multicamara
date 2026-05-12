@@ -4,18 +4,23 @@ Ventana principal — LabTREM Orquestador Multicámara.
 """
 import datetime
 import os
+import subprocess
 
 from PyQt5.QtCore import QPropertyAnimation, QRectF, Qt, QTimer, pyqtProperty
 from PyQt5.QtGui import QBrush, QColor, QFont, QIcon, QPainter, QPen, QPalette
 from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFrame,
     QGraphicsOpacityEffect,
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -763,31 +768,79 @@ class MainWindow(QMainWindow):
             widget.set_silhouette_visible(visible)
 
     def _open_output_dir(self) -> None:
+        """Muestra un diálogo propio con los videos grabados y permite reproducirlos."""
         os.makedirs(self._output_dir, exist_ok=True)
-        import subprocess
+
         if os.name == "nt":
+            # En Windows, abrir Explorer normalmente
             try:
                 subprocess.Popen(["explorer", os.path.normpath(self._output_dir)])
-                self._status_bar.showMessage(f"Carpeta de videos: {self._output_dir}")
-                return
             except Exception:
                 pass
+            return
+
+        # Buscar videos MP4 en el directorio de salida
+        try:
+            files = sorted(
+                [f for f in os.listdir(self._output_dir) if f.lower().endswith(".mp4")],
+                reverse=True,
+            )
+        except OSError:
+            files = []
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Videos grabados")
+        dlg.resize(520, 380)
+        layout = QVBoxLayout(dlg)
+
+        lbl = QLabel(f"Carpeta: {self._output_dir}")
+        lbl.setWordWrap(True)
+        layout.addWidget(lbl)
+
+        lst = QListWidget()
+        if files:
+            for f in files:
+                lst.addItem(QListWidgetItem(f))
+            lst.setCurrentRow(0)
         else:
-            # xdg-open delega al gestor del host via DBUS (tiene VLC asociado)
-            for fm in ["xdg-open", "pcmanfm", "thunar", "nautilus"]:
+            lst.addItem(QListWidgetItem("(No hay videos grabados aún)"))
+        layout.addWidget(lst)
+
+        btn_play = QPushButton("▶  Reproducir")
+        btn_play.setEnabled(bool(files))
+        layout.addWidget(btn_play)
+
+        def _play() -> None:
+            item = lst.currentItem()
+            if not item:
+                return
+            name = item.text()
+            if not name.endswith(".mp4"):
+                return
+            path = os.path.join(self._output_dir, name)
+            # Intentar reproductores instalados en el HOST (no en Docker)
+            for player in ["vlc", "mpv", "cvlc", "mplayer"]:
                 try:
-                    subprocess.Popen([fm, self._output_dir])
-                    self._status_bar.showMessage(f"Carpeta de videos: {self._output_dir}")
+                    subprocess.Popen([player, path])
+                    self._status_bar.showMessage(f"Reproduciendo: {name}")
                     return
                 except FileNotFoundError:
                     continue
-        # Ultimo recurso: mostrar la ruta
-        msg = QMessageBox(self)
-        msg.setWindowTitle("Carpeta de videos")
-        msg.setText(f"Videos guardados en:\n\n{self._output_dir}")
-        msg.setIcon(QMessageBox.Information)
-        msg.exec_()
-        self._status_bar.showMessage(f"Carpeta de videos: {self._output_dir}")
+            QMessageBox.warning(
+                dlg,
+                "Sin reproductor",
+                "No se encontró VLC ni MPV.\n"
+                "Instala uno:\n  sudo apt install vlc",
+            )
+
+        btn_play.clicked.connect(_play)
+        lst.itemDoubleClicked.connect(lambda _: _play())
+
+        close_btn = QDialogButtonBox(QDialogButtonBox.Close)
+        close_btn.rejected.connect(dlg.reject)
+        layout.addWidget(close_btn)
+
+        dlg.exec_()
 
     # ═════════════════════════════════════════════════════════════════════════
     # Cierre
