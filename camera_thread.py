@@ -278,13 +278,13 @@ class CameraThread(QThread):
             self._running = False
             return
 
-        # 1640×1232 = modo binning 2×2 del IMX219 → usa el sensor COMPLETO.
-        # 1920×1080 usa un recorte central del sensor (FOV reducido ~1.7×).
-        # 1640×1232 y 1920×1080 ocupan casi la misma memoria DMA (~6 MB) → no hay OOM.
-        PICAM_W, PICAM_H = 1640, 1232
+        # 1920×1080 en el IMX219: imagen más nítida que el modo binning 1640×1232.
+        # 15fps libera ~50% de CPU vs 30fps → las USB cameras no pierden frames.
+        # La panorámica es vista de contexto espacial — 15fps es más que suficiente.
+        PICAM_W, PICAM_H, PICAM_FPS = 1920, 1080, 15
         config = picam.create_video_configuration(
             main={"format": "RGB888", "size": (PICAM_W, PICAM_H)},
-            controls={"FrameRate": float(TARGET_FPS)},
+            controls={"FrameRate": float(PICAM_FPS)},
         )
         picam.configure(config)
         try:
@@ -323,9 +323,7 @@ class CameraThread(QThread):
             return
 
         self._frame_size = (last_frame.shape[1], last_frame.shape[0])
-        # Todas las cámaras corren a TARGET_FPS para máxima sincronización
-        self._actual_fps = TARGET_FPS
-        interval_ms = int(1000 / TARGET_FPS)  # 33 ms
+        self._actual_fps = float(PICAM_FPS)
         self.connected.emit(True)
 
         consecutive_errors = 0
