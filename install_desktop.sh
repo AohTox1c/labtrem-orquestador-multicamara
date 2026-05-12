@@ -24,14 +24,13 @@ DESKTOP="$HOME/Desktop/LabTREM.desktop"
 cat > "$DESKTOP" << EOF
 [Desktop Entry]
 Version=1.0
-Encoding=UTF-8
+Type=Application
 Name=LabTREM Orquestador
-Comment=Captura multicámara sincronizada
+Comment=Captura multicamara sincronizada
 Exec=$REPO/launch_labtrem.sh
 Icon=$ICON_DIR/labtrem.svg
 Terminal=false
-Type=Application
-Categories=Science;AudioVideo;
+Categories=Science;
 StartupWMClass=labtrem
 EOF
 
