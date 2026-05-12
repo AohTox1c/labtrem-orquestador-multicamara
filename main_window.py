@@ -819,54 +819,22 @@ class MainWindow(QMainWindow):
                 return
             path = os.path.join(self._output_dir, name)
 
-            # Forzar X11 — VLC del host puede intentar Wayland nativo y
-            # fallar silenciosamente si WAYLAND_DISPLAY no está disponible.
-            env = os.environ.copy()
-            env["DISPLAY"] = env.get("DISPLAY", ":0")
-            env["WAYLAND_DISPLAY"] = ""        # deshabilitar Wayland → X11
-            env["QT_QPA_PLATFORM"] = "xcb"    # forzar xcb en Qt-based apps
+            # Escribir la ruta en .play_request — el watcher del HOST (launch_labtrem.sh)
+            # lo detecta y lanza VLC con acceso completo al entorno gráfico nativo.
+            req_file = os.path.join(self._output_dir, ".play_request")
+            try:
+                with open(req_file, "w") as f:
+                    f.write(path)
+                self._status_bar.showMessage(f"Reproduciendo: {name}")
+                return
+            except OSError:
+                pass
 
-            player_cmds = [
-                # 1. nsenter: entra en el namespace de montaje del host (PID 1)
-                #    → ve todo el sistema de archivos del host con sus libs nativas
-                ["nsenter", "-t", "1", "-m", "--",
-                 "env", f"DISPLAY={env['DISPLAY']}", "QT_QPA_PLATFORM=xcb",
-                 "WAYLAND_DISPLAY=",
-                 "vlc", "--started-from-file", "--no-qt-privacy-ask", path],
-                ["nsenter", "-t", "1", "-m", "--",
-                 "env", f"DISPLAY={env['DISPLAY']}", "QT_QPA_PLATFORM=xcb",
-                 "WAYLAND_DISPLAY=",
-                 "mpv", "--no-terminal", "--force-window", path],
-                # 2. chroot al sistema de archivos del host
-                ["chroot", "/proc/1/root", "/usr/bin/vlc",
-                 "--started-from-file", "--no-qt-privacy-ask", path],
-                ["chroot", "/proc/1/root", "/usr/bin/mpv",
-                 "--no-terminal", "--force-window", path],
-                # 3. En contenedor (tras rebuild con vlc en Dockerfile)
-                ["vlc", "--started-from-file", "--no-qt-privacy-ask", path],
-                ["mpv", "--no-terminal", "--force-window", path],
-            ]
-            for cmd in player_cmds:
-                try:
-                    proc = subprocess.Popen(cmd, env=env,
-                                            stdout=subprocess.DEVNULL,
-                                            stderr=subprocess.DEVNULL)
-                    # Esperar 800ms — si el proceso muere en <800ms, falló
-                    try:
-                        proc.wait(timeout=0.8)
-                        # Salió rápido → probablemente error, intentar siguiente
-                        continue
-                    except subprocess.TimeoutExpired:
-                        pass  # Sigue corriendo → éxito
-                    self._status_bar.showMessage(f"Reproduciendo: {name}")
-                    return
-                except (FileNotFoundError, PermissionError, OSError):
-                    continue
             QMessageBox.warning(
                 dlg,
                 "Sin reproductor",
-                "No se encontró VLC ni MPV.\n"
-                "Instala uno:\n  sudo apt install vlc",
+                "No se pudo escribir la solicitud de reproducción.\n"
+                f"Ruta del video:\n{path}",
             )
 
         btn_play.clicked.connect(_play)
