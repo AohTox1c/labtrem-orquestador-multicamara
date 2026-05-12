@@ -818,13 +818,21 @@ class MainWindow(QMainWindow):
             if not name.endswith(".mp4"):
                 return
             path = os.path.join(self._output_dir, name)
-            # Intentar reproductores instalados en el HOST (no en Docker)
-            for player in ["vlc", "mpv", "cvlc", "mplayer"]:
+            # Intentar reproductores. En Docker --privileged, chroot /proc/1/root
+            # escapa al sistema de archivos del host y ejecuta su vlc/mpv.
+            player_cmds = [
+                ["vlc", path],                                         # contenedor (tras rebuild)
+                ["mpv", path],                                         # contenedor (tras rebuild)
+                ["chroot", "/proc/1/root", "/usr/bin/vlc", path],    # vlc del host
+                ["chroot", "/proc/1/root", "/usr/bin/mpv", path],    # mpv del host
+                ["chroot", "/proc/1/root", "/usr/bin/cvlc", path],   # cvlc del host
+            ]
+            for cmd in player_cmds:
                 try:
-                    subprocess.Popen([player, path])
+                    subprocess.Popen(cmd, env=os.environ.copy())
                     self._status_bar.showMessage(f"Reproduciendo: {name}")
                     return
-                except FileNotFoundError:
+                except (FileNotFoundError, PermissionError):
                     continue
             QMessageBox.warning(
                 dlg,
