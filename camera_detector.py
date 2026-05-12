@@ -170,12 +170,16 @@ def _detect_generic(max_index: int) -> list[tuple[int, str]]:
 # ── Picamera2 (CSI — Raspberry Pi) ───────────────────────────────────────────
 
 def _detect_picamera2() -> list[tuple[int, str]]:
-    """Detecta cámaras CSI via Picamera2 (solo Raspberry Pi)."""
+    """Detecta cámaras CSI via Picamera2 (solo sensores nativos, no USB)."""
     try:
         from picamera2 import Picamera2  # type: ignore
         cam_info = Picamera2.global_camera_info()
         result = []
         for info in cam_info:
+            cam_id = info.get("Id", "")
+            # Excluir cámaras USB enumeradas por libcamera UVC
+            if "usb" in cam_id.lower():
+                continue
             num   = info.get("Num", 0)
             model = info.get("Model", "Pi Camera")
             idx   = PICAMERA2_OFFSET + num

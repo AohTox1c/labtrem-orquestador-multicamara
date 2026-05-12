@@ -67,11 +67,13 @@ class CameraThread(QThread):
             return
 
         # Solicitar la mayor resolución que soporte la cámara
-        # (el driver la limita a su máximo real)
         try:
             cap.set(cv2.CAP_PROP_FRAME_WIDTH,  4096)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 4096)
             cap.set(cv2.CAP_PROP_FPS, TARGET_FPS)
+            # Forzar MJPEG — imprescindible en cámaras USB (C920, etc.) para
+            # obtener 30 fps. Sin MJPEG el driver usa YUYV sin comprimir (~5 fps).
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
         except Exception:
             pass  # Usar la resolución nativa de la cámara
 
