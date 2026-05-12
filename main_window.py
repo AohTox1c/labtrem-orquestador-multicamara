@@ -242,9 +242,11 @@ class MainWindow(QMainWindow):
         self._recording_paths: list[str] = []
         self._audio_recorder = AudioRecorder()
         self._spinners:  dict[str, _Spinner]   = {}
-        self._output_dir = os.path.join(
-            os.path.expanduser("~"), "Videos", "LabTREM"
-        )
+        # En Linux (Raspberry Pi) usa el disco externo; en Windows, carpeta Videos
+        if os.name == "nt":
+            self._output_dir = os.path.join(os.path.expanduser("~"), "Videos", "LabTREM")
+        else:
+            self._output_dir = "/mnt/disco1/Camarapp/Videos"
 
         # Timer para mostrar duración en la barra de estado
         self._rec_timer = QTimer(self)
@@ -702,7 +704,10 @@ class MainWindow(QMainWindow):
     def _open_output_dir(self) -> None:
         os.makedirs(self._output_dir, exist_ok=True)
         import subprocess
-        subprocess.Popen(["explorer", os.path.normpath(self._output_dir)])
+        if os.name == "nt":
+            subprocess.Popen(["explorer", os.path.normpath(self._output_dir)])
+        else:
+            subprocess.Popen(["xdg-open", self._output_dir])
 
     # ═════════════════════════════════════════════════════════════════════════
     # Cierre
