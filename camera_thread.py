@@ -21,9 +21,8 @@ TARGET_WIDTH = 1920
 TARGET_HEIGHT = 1080
 TARGET_FPS = 30
 # Dos cámaras USB 2.0 a 1080p@30fps (~20 Mbps cada una) saturan el bus USB.
-# Solución: mantener 1080p pero bajar a 15fps (~10 Mbps) → mismo ancho de banda
-# que 720p@30fps, pero el doble de resolución espacial (mejor para análisis clínico).
-USB_FPS = 15
+# 20fps (~13 Mbps) es el compromiso: más fluido que 15fps y cabe en el bus.
+USB_FPS = 20
 
 # Índices >= PICAMERA2_OFFSET → cámara CSI via Picamera2
 PICAMERA2_OFFSET = 1000
@@ -162,10 +161,15 @@ class CameraThread(QThread):
 
     # ── Grabación ─────────────────────────────────────────────────────────────
 
-    def start_recording(self, output_path: str) -> None:
-        """Abre un contenedor MP4 y arranca el hilo encoder independiente."""
+    def start_recording(self, output_path: str, rec_t0: float | None = None) -> None:
+        """Abre un contenedor MP4 y arranca el hilo encoder independiente.
+        rec_t0: timestamp compartido (time.perf_counter) del momento de inicio
+        de grabación. Pasar el mismo valor a todas las cámaras garantiza que
+        los PTS de todos los videos estén alineados al mismo origen de tiempo.
+        """
         w, h = self._frame_size
         fps_int = int(round(max(5.0, min(60.0, self._actual_fps))))
+        t0 = rec_t0 if rec_t0 is not None else time.perf_counter()
         try:
             container = av.open(output_path, mode="w")
             stream    = container.add_stream("h264", rate=fps_int)
@@ -182,7 +186,7 @@ class CameraThread(QThread):
                 self._container = container
                 self._av_stream = stream
                 self._fps_int   = fps_int
-                self._rec_t0    = time.perf_counter()
+                self._rec_t0    = t0
                 self._last_pts  = -1
                 self._recording = True
 
@@ -191,16 +195,15 @@ class CameraThread(QThread):
             self._writer_closed.clear()
             threading.Thread(
                 target=self._encoder_loop,
-                args=(eq, container, stream, fps_int),
+                args=(eq, container, stream, fps_int, t0),
                 daemon=True,
             ).start()
 
         except Exception as exc:
             self.error_occurred.emit(f"No se pudo crear el video: {exc}")
 
-    def _encoder_loop(self, eq: "queue.Queue", container, stream, fps_int: int) -> None:
+    def _encoder_loop(self, eq: "queue.Queue", container, stream, fps_int: int, rec_t0: float) -> None:
         """Hilo dedicado al encoding H.264. Lee (frame_bgr, timestamp) de la cola."""
-        rec_t0 = self._rec_t0
         last_pts = -1
         try:
             while True:

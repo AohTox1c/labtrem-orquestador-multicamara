@@ -645,11 +645,16 @@ class MainWindow(QMainWindow):
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         self._recording_paths = []
 
+        # Capturar un único t0 compartido ANTES del loop → todos los videos
+        # usan el mismo origen de tiempo → PTS alineados → sin desync.
+        import time as _time
+        rec_t0 = _time.perf_counter()
+
         # Arrancar grabación en todos los hilos activos simultáneamente
         for key, thread in self._threads.items():
             path = os.path.join(self._output_dir, f"{key}_{ts}.mp4")
             self._recording_paths.append(path)
-            thread.start_recording(path)
+            thread.start_recording(path, rec_t0=rec_t0)
 
         # Iniciar grabación de audio (no-op si sounddevice no está instalado)
         self._audio_recorder.start()
