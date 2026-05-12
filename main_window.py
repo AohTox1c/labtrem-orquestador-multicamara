@@ -310,10 +310,10 @@ class MainWindow(QMainWindow):
         btn_open.clicked.connect(self._open_output_dir)
         h.addWidget(btn_open)
 
-        btn_refresh = QPushButton("Actualizar cámaras")
-        btn_refresh.setObjectName("btn_secondary")
-        btn_refresh.clicked.connect(self._refresh_cameras)
-        h.addWidget(btn_refresh)
+        self._btn_refresh = QPushButton("Actualizar cámaras")
+        self._btn_refresh.setObjectName("btn_secondary")
+        self._btn_refresh.clicked.connect(self._refresh_cameras)
+        h.addWidget(self._btn_refresh)
 
         return w
 
@@ -504,6 +504,13 @@ class MainWindow(QMainWindow):
 
     def _refresh_cameras(self) -> None:
         """Detecta cámaras disponibles y llena los desplegables."""
+        self._btn_refresh.setEnabled(False)
+        self._btn_refresh.setText("Buscando...")
+        self._status_bar.showMessage("Buscando cámaras...")
+        # Procesar eventos para que el texto se actualice antes del bloqueo
+        from PyQt5.QtWidgets import QApplication
+        QApplication.processEvents()
+
         self._cameras = detect_cameras()
         for role in ROLES:
             combo = self._combos[role["key"]]
@@ -524,8 +531,8 @@ class MainWindow(QMainWindow):
         n = len(self._cameras)
         self._status_bar.showMessage(
             f"{n} cámara(s) detectada(s). Selecciónelas en los desplegables para iniciar la vista previa."
-        )
-
+        )        self._btn_refresh.setEnabled(True)
+        self._btn_refresh.setText("Actualizar cámaras")
     def _on_camera_selected(self, key: str) -> None:
         """Conecta automáticamente la cámara elegida en el desplegable."""
         if key in self._threads:
@@ -708,9 +715,13 @@ class MainWindow(QMainWindow):
             if os.name == "nt":
                 subprocess.Popen(["explorer", os.path.normpath(self._output_dir)])
             else:
+                # Intentar abrir el gestor de archivos del host (funciona cuando el
+                # .desktop se lanza desde el escritorio con acceso al DISPLAY real)
                 subprocess.Popen(["xdg-open", self._output_dir])
         except FileNotFoundError:
-            self._status_bar.showMessage(f"Carpeta: {self._output_dir}")
+            pass
+        # Siempre mostrar la ruta en la barra de estado
+        self._status_bar.showMessage(f"Carpeta de videos: {self._output_dir}")
 
     # ═════════════════════════════════════════════════════════════════════════
     # Cierre

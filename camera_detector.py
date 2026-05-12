@@ -89,14 +89,25 @@ def _detect_linux() -> list[tuple[int, str]]:
     for device in devices:
         idx = int(device.replace("video", ""))
         device_path = f"/dev/{device}"
-        name = _get_v4l2_name(device_path) or f"Cámara {idx}"
 
+        # Algunos dispositivos V4L2 no son cámaras de imagen (son metadata, etc.)
+        # Intentar abrir con V4L2 y leer varios frames antes de descartar
         cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
-        if cap.isOpened():
-            ret, _ = cap.read()
-            if ret:
-                cameras.append((idx, name))
+        if not cap.isOpened():
+            cap.release()
+            continue
+
+        valid = False
+        for _ in range(6):
+            ret, frame = cap.read()
+            if ret and frame is not None and frame.size > 0:
+                valid = True
+                break
         cap.release()
+
+        if valid:
+            name = _get_v4l2_name(device_path) or f"Cámara {idx}"
+            cameras.append((idx, name))
 
     return cameras if cameras else _detect_generic(10)
 
