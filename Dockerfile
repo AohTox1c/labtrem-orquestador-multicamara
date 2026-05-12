@@ -62,6 +62,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libdbus-1-3 \
     xvfb \
     xdg-utils \
+    pcmanfm \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

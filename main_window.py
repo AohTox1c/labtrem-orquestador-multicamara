@@ -551,6 +551,23 @@ class MainWindow(QMainWindow):
             self._btn_record.setEnabled(bool(self._threads))
             return
 
+        # Evitar duplicados: si otro rol ya usa esta cámara, liberarlo primero
+        for other_key, other_combo in self._combos.items():
+            if other_key == key:
+                continue
+            if other_combo.currentData() == idx:
+                other_combo.blockSignals(True)
+                other_combo.setCurrentIndex(0)
+                other_combo.blockSignals(False)
+                if other_key in self._threads:
+                    self._threads[other_key].stop()
+                    del self._threads[other_key]
+                self._widgets[other_key].clear()
+                self._dots[other_key].set_active(False)
+                self._spinners[other_key].stop()
+                self._slabels[other_key].setText("Desconectada")
+                self._slabels[other_key].setStyleSheet("font-size:12px;color:#94a3b8;")
+
         self._start_thread(key, idx)
         self._status_bar.showMessage(f"Conectando {key}…")
 

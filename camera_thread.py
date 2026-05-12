@@ -66,10 +66,11 @@ class CameraThread(QThread):
             self._running = False
             return
 
-        # Intentar solicitar 1080p; algunas cámaras lanzan excepción C++ si no lo soportan
+        # Solicitar la mayor resolución que soporte la cámara
+        # (el driver la limita a su máximo real)
         try:
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, TARGET_WIDTH)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, TARGET_HEIGHT)
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH,  4096)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 4096)
             cap.set(cv2.CAP_PROP_FPS, TARGET_FPS)
         except Exception:
             pass  # Usar la resolución nativa de la cámara
@@ -212,8 +213,20 @@ class CameraThread(QThread):
             self._running = False
             return
 
-        config = picam.create_preview_configuration(
-            main={"format": "RGB888", "size": (TARGET_WIDTH, TARGET_HEIGHT)}
+        # Usar la máxima resolución del sensor
+        try:
+            sensor_modes = picam.sensor_modes
+            if sensor_modes:
+                best = max(sensor_modes, key=lambda m: m["size"][0] * m["size"][1])
+                max_size = (int(best["size"][0]), int(best["size"][1]))
+            else:
+                max_size = (3280, 2464)  # IMX219 fallback
+        except Exception:
+            max_size = (3280, 2464)
+
+        config = picam.create_video_configuration(
+            main={"format": "RGB888", "size": max_size},
+            controls={"FrameRate": float(TARGET_FPS)},
         )
         picam.configure(config)
         try:
