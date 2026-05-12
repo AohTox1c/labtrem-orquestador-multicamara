@@ -289,11 +289,17 @@ class CameraThread(QThread):
                 continue
             consecutive_errors = 0
 
+            # Picamera2 con formato "RGB888" entrega bytes en orden BGR
+            # (comportamiento real de libcamera — el nombre es confuso).
+            # bgr se pasa directamente a _frame_to_pixmap (espera BGR como OpenCV)
+            # y a PyAV como "bgr24" para grabación con colores correctos.
+            bgr = rgb  # los bytes ya están en BGR
+
             # Grabación con PyAV (mismo pipeline que V4L2)
             with self._lock:
                 if self._recording and self._av_stream is not None:
                     try:
-                        av_frame = av.VideoFrame.from_ndarray(rgb, format="rgb24")
+                        av_frame = av.VideoFrame.from_ndarray(bgr, format="bgr24")
                         av_frame = av_frame.reformat(format="yuv420p")
                         raw_pts = int((time.perf_counter() - self._rec_t0) * self._fps_int)
                         av_frame.pts = max(raw_pts, self._last_pts + 1)
@@ -303,8 +309,6 @@ class CameraThread(QThread):
                     except Exception:
                         pass
 
-            # Picamera2 entrega RGB; convertir a BGR para _frame_to_pixmap
-            bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
             self.frame_ready.emit(_frame_to_pixmap(bgr))
             self.msleep(interval_ms)
 
