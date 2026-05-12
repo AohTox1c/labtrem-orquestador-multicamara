@@ -818,21 +818,49 @@ class MainWindow(QMainWindow):
             if not name.endswith(".mp4"):
                 return
             path = os.path.join(self._output_dir, name)
-            # Intentar reproductores. En Docker --privileged, chroot /proc/1/root
-            # escapa al sistema de archivos del host y ejecuta su vlc/mpv.
+
+            # Forzar X11 — VLC del host puede intentar Wayland nativo y
+            # fallar silenciosamente si WAYLAND_DISPLAY no está disponible.
+            env = os.environ.copy()
+            env["DISPLAY"] = env.get("DISPLAY", ":0")
+            env["WAYLAND_DISPLAY"] = ""        # deshabilitar Wayland → X11
+            env["QT_QPA_PLATFORM"] = "xcb"    # forzar xcb en Qt-based apps
+
             player_cmds = [
-                ["vlc", path],                                         # contenedor (tras rebuild)
-                ["mpv", path],                                         # contenedor (tras rebuild)
-                ["chroot", "/proc/1/root", "/usr/bin/vlc", path],    # vlc del host
-                ["chroot", "/proc/1/root", "/usr/bin/mpv", path],    # mpv del host
-                ["chroot", "/proc/1/root", "/usr/bin/cvlc", path],   # cvlc del host
+                # 1. nsenter: entra en el namespace de montaje del host (PID 1)
+                #    → ve todo el sistema de archivos del host con sus libs nativas
+                ["nsenter", "-t", "1", "-m", "--",
+                 "env", f"DISPLAY={env['DISPLAY']}", "QT_QPA_PLATFORM=xcb",
+                 "WAYLAND_DISPLAY=",
+                 "vlc", "--started-from-file", "--no-qt-privacy-ask", path],
+                ["nsenter", "-t", "1", "-m", "--",
+                 "env", f"DISPLAY={env['DISPLAY']}", "QT_QPA_PLATFORM=xcb",
+                 "WAYLAND_DISPLAY=",
+                 "mpv", "--no-terminal", "--force-window", path],
+                # 2. chroot al sistema de archivos del host
+                ["chroot", "/proc/1/root", "/usr/bin/vlc",
+                 "--started-from-file", "--no-qt-privacy-ask", path],
+                ["chroot", "/proc/1/root", "/usr/bin/mpv",
+                 "--no-terminal", "--force-window", path],
+                # 3. En contenedor (tras rebuild con vlc en Dockerfile)
+                ["vlc", "--started-from-file", "--no-qt-privacy-ask", path],
+                ["mpv", "--no-terminal", "--force-window", path],
             ]
             for cmd in player_cmds:
                 try:
-                    subprocess.Popen(cmd, env=os.environ.copy())
+                    proc = subprocess.Popen(cmd, env=env,
+                                            stdout=subprocess.DEVNULL,
+                                            stderr=subprocess.DEVNULL)
+                    # Esperar 800ms — si el proceso muere en <800ms, falló
+                    try:
+                        proc.wait(timeout=0.8)
+                        # Salió rápido → probablemente error, intentar siguiente
+                        continue
+                    except subprocess.TimeoutExpired:
+                        pass  # Sigue corriendo → éxito
                     self._status_bar.showMessage(f"Reproduciendo: {name}")
                     return
-                except (FileNotFoundError, PermissionError):
+                except (FileNotFoundError, PermissionError, OSError):
                     continue
             QMessageBox.warning(
                 dlg,
