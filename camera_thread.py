@@ -66,16 +66,15 @@ class CameraThread(QThread):
             self._running = False
             return
 
-        # Solicitar la mayor resolución que soporte la cámara
+        # MJPEG primero — V4L2 negocia el formato ANTES que la resolución.
+        # Si se pone después de width/height el driver ya fijó YUYV y lo ignora.
         try:
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH,  4096)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 4096)
-            cap.set(cv2.CAP_PROP_FPS, TARGET_FPS)
-            # Forzar MJPEG — imprescindible en cámaras USB (C920, etc.) para
-            # obtener 30 fps. Sin MJPEG el driver usa YUYV sin comprimir (~5 fps).
             cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1920)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+            cap.set(cv2.CAP_PROP_FPS, TARGET_FPS)
         except Exception:
-            pass  # Usar la resolución nativa de la cámara
+            pass
 
         # FPS inicial del driver (se reemplazará con la medición real más abajo)
         fps = cap.get(cv2.CAP_PROP_FPS)
