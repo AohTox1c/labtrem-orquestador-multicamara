@@ -23,6 +23,10 @@ TARGET_FPS = 30
 # Índices >= PICAMERA2_OFFSET → cámara CSI via Picamera2
 PICAMERA2_OFFSET = 1000
 
+# Mutex global: impide que dos cámaras USB negocien MJPEG simultáneamente.
+# cap.open() + FOURCC negotiation + warmup se ejecutan de a uno a la vez.
+_USB_INIT_LOCK = threading.Lock()
+
 
 class CameraThread(QThread):
     """Hilo de captura de una sola cámara."""
@@ -57,63 +61,63 @@ class CameraThread(QThread):
     # ── Bucle V4L2 / OpenCV ───────────────────────────────────────────────────
 
     def _run_v4l2(self) -> None:
-        # Desfase de inicio según índice para evitar que dos cámaras USB negocien
-        # MJPEG simultáneamente en el mismo bus (causa distorsión en una de ellas)
-        self.msleep(self.camera_index * 400)
-
         device_path = f"/dev/video{self.camera_index}"
-        cap = cv2.VideoCapture(device_path if platform.system() == "Linux" else self.camera_index, _BACKEND)
-        if not cap.isOpened():
-            self.error_occurred.emit(
-                f"No se pudo abrir la cámara {self.camera_index}"
-            )
-            self.connected.emit(False)
-            self._running = False
-            return
 
-        # 1080p MJPEG — C920 soporta 1080p@30fps en MJPEG.
-        # El stagger de inicio previene contención en el bus USB.
-        MJPG = cv2.VideoWriter_fourcc(*'MJPG')
-        cap.set(cv2.CAP_PROP_FOURCC, MJPG)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  TARGET_WIDTH)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, TARGET_HEIGHT)
-        cap.set(cv2.CAP_PROP_FPS, TARGET_FPS)
-
-        accepted = int(cap.get(cv2.CAP_PROP_FOURCC))
-        if accepted != MJPG:
-            # El driver rechazó MJPEG — reabrir con negociación automática
-            cap.release()
+        # Adquirir el mutex global: sólo una cámara USB inicializa a la vez.
+        # Impide que dos hilos negocien MJPEG simultáneamente en el bus USB,
+        # lo que causaba distorsión/freeze en la cámara ya activa.
+        with _USB_INIT_LOCK:
             cap = cv2.VideoCapture(device_path if platform.system() == "Linux" else self.camera_index, _BACKEND)
             if not cap.isOpened():
-                self.error_occurred.emit(f"No se pudo reabrir la cámara {self.camera_index}")
+                self.error_occurred.emit(
+                    f"No se pudo abrir la cámara {self.camera_index}"
+                )
                 self.connected.emit(False)
                 self._running = False
                 return
 
-        # FPS del driver tras negociar MJPEG — fiable en este punto
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        self._actual_fps = fps if fps and fps > 0 else TARGET_FPS
+            # 1080p MJPEG — C920 soporta 1080p@30fps en MJPEG.
+            MJPG = cv2.VideoWriter_fourcc(*'MJPG')
+            cap.set(cv2.CAP_PROP_FOURCC, MJPG)
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH,  TARGET_WIDTH)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, TARGET_HEIGHT)
+            cap.set(cv2.CAP_PROP_FPS, TARGET_FPS)
 
-        # Warm-up: esperar hasta obtener un frame válido
-        last_frame = None
-        for _ in range(20):
-            ret, frame = cap.read()
-            if ret and frame is not None and frame.size > 0:
-                last_frame = frame
-                break
-            self.msleep(100)
+            accepted = int(cap.get(cv2.CAP_PROP_FOURCC))
+            if accepted != MJPG:
+                # El driver rechazó MJPEG — reabrir con negociación automática
+                cap.release()
+                cap = cv2.VideoCapture(device_path if platform.system() == "Linux" else self.camera_index, _BACKEND)
+                if not cap.isOpened():
+                    self.error_occurred.emit(f"No se pudo reabrir la cámara {self.camera_index}")
+                    self.connected.emit(False)
+                    self._running = False
+                    return
 
-        if last_frame is None:
-            self.error_occurred.emit(f"La cámara {self.camera_index} no responde")
-            self.connected.emit(False)
-            cap.release()
-            self._running = False
-            return
+            # FPS del driver tras negociar MJPEG — fiable en este punto
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            self._actual_fps = fps if fps and fps > 0 else TARGET_FPS
 
-        self._frame_size = (last_frame.shape[1], last_frame.shape[0])
-        # Todas las cámaras corren a TARGET_FPS para máxima sincronización
-        self._actual_fps = TARGET_FPS
-        interval_ms = int(1000 / TARGET_FPS)  # 33 ms
+            # Warm-up: esperar hasta obtener un frame válido
+            last_frame = None
+            for _ in range(20):
+                ret, frame = cap.read()
+                if ret and frame is not None and frame.size > 0:
+                    last_frame = frame
+                    break
+                self.msleep(100)
+
+            if last_frame is None:
+                self.error_occurred.emit(f"La cámara {self.camera_index} no responde")
+                self.connected.emit(False)
+                cap.release()
+                self._running = False
+                return
+
+            self._frame_size = (last_frame.shape[1], last_frame.shape[0])
+            self._actual_fps = TARGET_FPS
+        # ── Fin del bloque de init exclusivo ─────────────────────────────────
+
         self.connected.emit(True)
 
         consecutive_errors = 0
