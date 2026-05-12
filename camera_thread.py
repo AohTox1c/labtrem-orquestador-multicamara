@@ -20,9 +20,11 @@ _BACKEND = cv2.CAP_ANY if platform.system() == "Windows" else cv2.CAP_V4L2
 TARGET_WIDTH = 1920
 TARGET_HEIGHT = 1080
 TARGET_FPS = 30
-# Dos cámaras USB 2.0 a 1080p@30fps (~20 Mbps cada una) saturan el bus USB.
-# 20fps (~13 Mbps) es el compromiso: más fluido que 15fps y cabe en el bus.
-USB_FPS = 20
+# C920 soporta hasta 1080p@30fps en MJPEG — máximo físico del sensor.
+# 60fps solo está disponible a 720p o inferior.
+# Con cada cámara en un puerto USB 3.0 azul distinto del RPi5,
+# 1080p@30fps cabe sin contención (~20 Mbps por cámara).
+USB_FPS = 30
 
 # Índices >= PICAMERA2_OFFSET → cámara CSI via Picamera2
 PICAMERA2_OFFSET = 1000
