@@ -173,12 +173,20 @@ class CameraThread(QThread):
         t0 = rec_t0 if rec_t0 is not None else time.perf_counter()
         try:
             container = av.open(output_path, mode="w")
-            stream    = container.add_stream("h264", rate=fps_int)
-            stream.width   = w
-            stream.height  = h
-            stream.pix_fmt = "yuv420p"
-            # CRF 18 = alta calidad. ultrafast = mínima latencia de encoding en ARM.
-            stream.options = {"crf": "18", "preset": "ultrafast"}
+            # Intentar encoder por hardware del RPi5 (VideoCore VII) → 0% CPU.
+            # Fallback automático a libx264 ultrafast si no disponible.
+            stream = None
+            if platform.system() == "Linux":
+                try:
+                    stream = container.add_stream("h264_v4l2m2m", rate=fps_int)
+                    stream.width, stream.height, stream.pix_fmt = w, h, "yuv420p"
+                    stream.options = {"b": "8000k" if h >= 1080 else "6000k"}
+                except Exception:
+                    stream = None
+            if stream is None:
+                stream = container.add_stream("h264", rate=fps_int)
+                stream.width, stream.height, stream.pix_fmt = w, h, "yuv420p"
+                stream.options = {"crf": "18", "preset": "ultrafast"}
 
             eq: queue.Queue = queue.Queue(maxsize=10)
             self._encode_queue = eq
@@ -278,9 +286,10 @@ class CameraThread(QThread):
             self._running = False
             return
 
-        # Pi Camera es la cámara más importante (orientación de cabeza, manos, juego).
-        # 1080p@30fps con encoder hardware = máxima calidad sin consumir CPU.
-        PICAM_W, PICAM_H, PICAM_FPS = 1920, 1080, 30
+        # 1640×1232: modo 2×2 binning del IMX219 → usa el sensor COMPLETO → sin zoom.
+        # 1920×1080 en el IMX219 es un recorte central del sensor (modo 6) → efecto zoom.
+        # 1640×1232@30fps captura toda la escena: cabeza, manos y entorno completo.
+        PICAM_W, PICAM_H, PICAM_FPS = 1640, 1232, 30
         config = picam.create_video_configuration(
             main={"format": "RGB888", "size": (PICAM_W, PICAM_H)},
             controls={"FrameRate": float(PICAM_FPS)},
@@ -294,12 +303,7 @@ class CameraThread(QThread):
             self._running = False
             return
 
-        # ScalerCrop al sensor completo como refuerzo (después de start es donde tiene efecto)
-        try:
-            sensor_res = picam.camera_properties.get("PixelArraySize", (3280, 2464))
-            picam.set_controls({"ScalerCrop": (0, 0, int(sensor_res[0]), int(sensor_res[1]))})
-        except Exception:
-            pass
+        # 1640×1232 ya usa el sensor completo → no se necesita ScalerCrop
 
         # Warm-up
         last_frame = None
