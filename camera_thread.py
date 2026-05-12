@@ -20,6 +20,10 @@ _BACKEND = cv2.CAP_ANY if platform.system() == "Windows" else cv2.CAP_V4L2
 TARGET_WIDTH = 1920
 TARGET_HEIGHT = 1080
 TARGET_FPS = 30
+# Dos cámaras USB 2.0 a 1080p@30fps (~20 Mbps cada una) saturan el bus USB.
+# Solución: mantener 1080p pero bajar a 15fps (~10 Mbps) → mismo ancho de banda
+# que 720p@30fps, pero el doble de resolución espacial (mejor para análisis clínico).
+USB_FPS = 15
 
 # Índices >= PICAMERA2_OFFSET → cámara CSI via Picamera2
 PICAMERA2_OFFSET = 1000
@@ -82,15 +86,16 @@ class CameraThread(QThread):
                 self._running = False
                 return
 
-            # 1080p MJPEG. Cada C920 debe estar en un puerto USB 3.0 azul distinto
-            # del RPi5 — así cada puerto tiene su propio Transaction Translator y
-            # ~480 Mbps de ancho de banda independiente.
+            # 1080p @ 15fps MJPEG.
+            # Dos C920 a 1080p@30fps (~20 Mbps c/u) saturan el bus USB 2.0.
+            # 15fps reduce a ~10 Mbps → caben dos cámaras sin contención,
+            # manteniendo el doble de resolución espacial vs 720p@30fps.
             MJPG = cv2.VideoWriter_fourcc(*'MJPG')
             cap.set(cv2.CAP_PROP_FOURCC, MJPG)
             cap.set(cv2.CAP_PROP_FRAME_WIDTH,  TARGET_WIDTH)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, TARGET_HEIGHT)
-            cap.set(cv2.CAP_PROP_FPS, TARGET_FPS)
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # mínimo buffer → menos latencia
+            cap.set(cv2.CAP_PROP_FPS, USB_FPS)
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
             accepted = int(cap.get(cv2.CAP_PROP_FOURCC))
             if accepted != MJPG:
@@ -124,7 +129,7 @@ class CameraThread(QThread):
                 return
 
             self._frame_size = (last_frame.shape[1], last_frame.shape[0])
-            self._actual_fps = TARGET_FPS
+            self._actual_fps = USB_FPS  # usar el fps real negociado con el driver
         # ── Fin del bloque de init exclusivo ─────────────────────────────────
 
         self.connected.emit(True)
