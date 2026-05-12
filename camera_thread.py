@@ -214,11 +214,17 @@ class CameraThread(QThread):
             return
 
         # 1920x1080 es el máximo que cabe en la memoria DMA del contenedor Docker.
-        # El sensor IMX219 a resolución completa (3280x2464) necesita ~90 MB DMA
-        # contigua, que Docker no puede garantizar → OSError ENOMEM.
+        # ScalerCrop al tamaño completo del sensor → campo visual máximo (sin zoom).
+        # Sin esto libcamera recorta el centro del sensor (zoom digital involuntario).
+        try:
+            sensor_res = picam.camera_properties.get("PixelArraySize", (3280, 2464))
+            full_crop = (0, 0, int(sensor_res[0]), int(sensor_res[1]))
+        except Exception:
+            full_crop = (0, 0, 3280, 2464)
+
         config = picam.create_video_configuration(
             main={"format": "RGB888", "size": (TARGET_WIDTH, TARGET_HEIGHT)},
-            controls={"FrameRate": float(TARGET_FPS)},
+            controls={"FrameRate": float(TARGET_FPS), "ScalerCrop": full_crop},
         )
         picam.configure(config)
         try:
