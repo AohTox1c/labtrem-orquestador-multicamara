@@ -704,10 +704,13 @@ class MainWindow(QMainWindow):
     def _open_output_dir(self) -> None:
         os.makedirs(self._output_dir, exist_ok=True)
         import subprocess
-        if os.name == "nt":
-            subprocess.Popen(["explorer", os.path.normpath(self._output_dir)])
-        else:
-            subprocess.Popen(["xdg-open", self._output_dir])
+        try:
+            if os.name == "nt":
+                subprocess.Popen(["explorer", os.path.normpath(self._output_dir)])
+            else:
+                subprocess.Popen(["xdg-open", self._output_dir])
+        except FileNotFoundError:
+            self._status_bar.showMessage(f"Carpeta: {self._output_dir}")
 
     # ═════════════════════════════════════════════════════════════════════════
     # Cierre
