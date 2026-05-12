@@ -71,12 +71,12 @@ class CameraThread(QThread):
             self._running = False
             return
 
-        # 720p MJPEG — más estable que 1080p cuando hay dos cámaras USB a la vez.
-        # La C920 a 720p MJPEG 30fps usa ~8 Mbps vs ~20 Mbps a 1080p.
+        # 1080p MJPEG — C920 soporta 1080p@30fps en MJPEG.
+        # El stagger de inicio previene contención en el bus USB.
         MJPG = cv2.VideoWriter_fourcc(*'MJPG')
         cap.set(cv2.CAP_PROP_FOURCC, MJPG)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1280)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT,  720)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  TARGET_WIDTH)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, TARGET_HEIGHT)
         cap.set(cv2.CAP_PROP_FPS, TARGET_FPS)
 
         accepted = int(cap.get(cv2.CAP_PROP_FOURCC))
@@ -147,7 +147,6 @@ class CameraThread(QThread):
                         pass
 
             self.frame_ready.emit(_frame_to_pixmap(frame))
-            self.msleep(interval_ms)
 
         cap.release()
         self._close_writer()
@@ -308,7 +307,6 @@ class CameraThread(QThread):
                         pass
 
             self.frame_ready.emit(_frame_to_pixmap(bgr))
-            self.msleep(interval_ms)
 
         picam.stop()
         picam.close()
