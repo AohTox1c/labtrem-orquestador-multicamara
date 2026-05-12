@@ -278,10 +278,9 @@ class CameraThread(QThread):
             self._running = False
             return
 
-        # 1920×1080 en el IMX219: imagen más nítida que el modo binning 1640×1232.
-        # 15fps libera ~50% de CPU vs 30fps → las USB cameras no pierden frames.
-        # La panorámica es vista de contexto espacial — 15fps es más que suficiente.
-        PICAM_W, PICAM_H, PICAM_FPS = 1920, 1080, 15
+        # Pi Camera es la cámara más importante (orientación de cabeza, manos, juego).
+        # 1080p@30fps con encoder hardware = máxima calidad sin consumir CPU.
+        PICAM_W, PICAM_H, PICAM_FPS = 1920, 1080, 30
         config = picam.create_video_configuration(
             main={"format": "RGB888", "size": (PICAM_W, PICAM_H)},
             controls={"FrameRate": float(PICAM_FPS)},
