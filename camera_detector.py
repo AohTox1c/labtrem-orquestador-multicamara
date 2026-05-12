@@ -29,7 +29,18 @@ def detect_cameras(max_index: int = 10) -> list[tuple[int, str]]:
     else:
         cameras = _detect_generic(max_index)
 
-    return cameras
+    # Numerar cámaras con nombre duplicado: "HD Pro Webcam C920" → "HD Pro Webcam C920 #1 / #2"
+    from collections import Counter
+    name_count: Counter = Counter(name for _, name in cameras)
+    seen: Counter = Counter()
+    result = []
+    for idx, name in cameras:
+        if name_count[name] > 1:
+            seen[name] += 1
+            result.append((idx, f"{name} #{seen[name]}"))
+        else:
+            result.append((idx, name))
+    return result
 
 
 # ── Windows ──────────────────────────────────────────────────────────────────
@@ -118,7 +129,7 @@ def _detect_linux() -> list[tuple[int, str]]:
 
         if valid:
             name = _get_v4l2_name(device_path) or f"Cámara {idx}"
-            cameras.append((idx, name))
+            cameras.append((idx, f"{name} [video{idx}]"))
 
     return cameras if cameras else _detect_generic(10)
 
