@@ -20,11 +20,10 @@ _BACKEND = cv2.CAP_ANY if platform.system() == "Windows" else cv2.CAP_V4L2
 TARGET_WIDTH = 1920
 TARGET_HEIGHT = 1080
 TARGET_FPS = 30
-# C920 soporta hasta 1080p@30fps en MJPEG — máximo físico del sensor.
-# 60fps solo está disponible a 720p o inferior.
-# Con cada cámara en un puerto USB 3.0 azul distinto del RPi5,
-# 1080p@30fps cabe sin contención (~20 Mbps por cámara).
-USB_FPS = 30
+# C920: 720p@60fps es el máximo en MJPEG (1080p solo llega a 30fps).
+USB_WIDTH  = 1280
+USB_HEIGHT = 720
+USB_FPS    = 60
 
 # Índices >= PICAMERA2_OFFSET → cámara CSI via Picamera2
 PICAMERA2_OFFSET = 1000
@@ -93,8 +92,8 @@ class CameraThread(QThread):
             # manteniendo el doble de resolución espacial vs 720p@30fps.
             MJPG = cv2.VideoWriter_fourcc(*'MJPG')
             cap.set(cv2.CAP_PROP_FOURCC, MJPG)
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH,  TARGET_WIDTH)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, TARGET_HEIGHT)
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH,  USB_WIDTH)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, USB_HEIGHT)
             cap.set(cv2.CAP_PROP_FPS, USB_FPS)
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
