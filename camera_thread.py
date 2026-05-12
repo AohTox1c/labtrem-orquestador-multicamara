@@ -213,19 +213,11 @@ class CameraThread(QThread):
             self._running = False
             return
 
-        # Usar la máxima resolución del sensor
-        try:
-            sensor_modes = picam.sensor_modes
-            if sensor_modes:
-                best = max(sensor_modes, key=lambda m: m["size"][0] * m["size"][1])
-                max_size = (int(best["size"][0]), int(best["size"][1]))
-            else:
-                max_size = (3280, 2464)  # IMX219 fallback
-        except Exception:
-            max_size = (3280, 2464)
-
+        # 1920x1080 es el máximo que cabe en la memoria DMA del contenedor Docker.
+        # El sensor IMX219 a resolución completa (3280x2464) necesita ~90 MB DMA
+        # contigua, que Docker no puede garantizar → OSError ENOMEM.
         config = picam.create_video_configuration(
-            main={"format": "RGB888", "size": max_size},
+            main={"format": "RGB888", "size": (TARGET_WIDTH, TARGET_HEIGHT)},
             controls={"FrameRate": float(TARGET_FPS)},
         )
         picam.configure(config)
