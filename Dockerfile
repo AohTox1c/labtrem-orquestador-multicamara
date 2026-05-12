@@ -22,6 +22,15 @@ FROM arm64v8/debian:bookworm-slim
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
+# ── Repositorio oficial de Raspberry Pi (necesario para picamera2/libcamera) ─
+RUN apt-get update && apt-get install -y --no-install-recommends gnupg curl ca-certificates \
+    && curl -fsSL https://archive.raspberrypi.com/debian/raspberrypi.gpg.key \
+       | gpg --dearmor -o /usr/share/keyrings/raspberrypi-archive-keyring.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/raspberrypi-archive-keyring.gpg] \
+       https://archive.raspberrypi.com/debian/ bookworm main" \
+       > /etc/apt/sources.list.d/raspi.list \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # ── Dependencias del sistema ──────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Python del sistema (3.11, compatible con todos los paquetes apt)
@@ -39,7 +48,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxcb-cursor0 \
     # OpenCV en ARM (más estable vía apt en la Pi)
     python3-opencv \
-    # Picamera2 para la cámara CSI oficial de Raspberry Pi
+    # Picamera2 y libcamera (repositorio Raspberry Pi)
     python3-picamera2 \
     python3-libcamera \
     # Audio (sounddevice requiere PortAudio)
