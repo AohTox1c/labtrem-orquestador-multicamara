@@ -57,7 +57,12 @@ class CameraThread(QThread):
     # ── Bucle V4L2 / OpenCV ───────────────────────────────────────────────────
 
     def _run_v4l2(self) -> None:
-        cap = cv2.VideoCapture(self.camera_index, _BACKEND)
+        # Desfase de inicio según índice para evitar que dos cámaras USB negocien
+        # MJPEG simultáneamente en el mismo bus (causa distorsión en una de ellas)
+        self.msleep(self.camera_index * 400)
+
+        device_path = f"/dev/video{self.camera_index}"
+        cap = cv2.VideoCapture(device_path if platform.system() == "Linux" else self.camera_index, _BACKEND)
         if not cap.isOpened():
             self.error_occurred.emit(
                 f"No se pudo abrir la cámara {self.camera_index}"
@@ -66,19 +71,19 @@ class CameraThread(QThread):
             self._running = False
             return
 
-        # Intentar MJPEG a 1080p. Si el driver no lo acepta (fourcc devuelto ≠ MJPG)
-        # se cierra y reabre sin forzar formato — el driver elige lo que soporte.
+        # 720p MJPEG — más estable que 1080p cuando hay dos cámaras USB a la vez.
+        # La C920 a 720p MJPEG 30fps usa ~8 Mbps vs ~20 Mbps a 1080p.
         MJPG = cv2.VideoWriter_fourcc(*'MJPG')
         cap.set(cv2.CAP_PROP_FOURCC, MJPG)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1920)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1280)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT,  720)
         cap.set(cv2.CAP_PROP_FPS, TARGET_FPS)
 
         accepted = int(cap.get(cv2.CAP_PROP_FOURCC))
         if accepted != MJPG:
             # El driver rechazó MJPEG — reabrir con negociación automática
             cap.release()
-            cap = cv2.VideoCapture(self.camera_index, _BACKEND)
+            cap = cv2.VideoCapture(device_path if platform.system() == "Linux" else self.camera_index, _BACKEND)
             if not cap.isOpened():
                 self.error_occurred.emit(f"No se pudo reabrir la cámara {self.camera_index}")
                 self.connected.emit(False)
