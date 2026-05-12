@@ -16,7 +16,7 @@
 #     labtrem
 # ──────────────────────────────────────────────────────────────────────────────
 
-FROM arm64v8/python:3.12-slim
+FROM arm64v8/debian:bookworm-slim
 
 # Evitar preguntas interactivas durante apt
 ENV DEBIAN_FRONTEND=noninteractive
@@ -24,10 +24,14 @@ ENV PYTHONUNBUFFERED=1
 
 # ── Dependencias del sistema ──────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Python del sistema (3.11, compatible con todos los paquetes apt)
+    python3 \
+    python3-pip \
     # FFmpeg (requerido por PyAV)
     ffmpeg \
     # PyQt5 y sus dependencias gráficas
     python3-pyqt5 \
+    python3-pyqt5.sip \
     libqt5widgets5 \
     libqt5gui5 \
     libqt5core5a \
@@ -44,7 +48,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
     libdbus-1-3 \
-    # Display virtual (útil para desarrollo headless)
     xvfb \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -52,32 +55,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # ── Directorio de trabajo ─────────────────────────────────────────────────────
 WORKDIR /app
 
-# ── Dependencias Python ───────────────────────────────────────────────────────
-COPY requirements.txt .
-
-# Exponer los paquetes del sistema (python3-pyqt5, python3-opencv) al Python 3.12
-ENV PYTHONPATH=/usr/lib/python3/dist-packages
-
-# En ARM64 usamos el opencv y PyQt5 del sistema (ya instalados arriba)
-RUN pip install --no-cache-dir \
-    numpy>=1.19.0 \
-    sounddevice>=0.4.0 \
-    av>=11.0.0 \
-    && pip install --no-cache-dir imageio-ffmpeg>=0.4.9 || true
+# ── Dependencias Python (solo las que no están en apt) ───────────────────────
+RUN pip3 install --no-cache-dir --break-system-packages \
+    numpy \
+    sounddevice \
+    av \
+    imageio-ffmpeg || true
 
 # ── Código fuente ─────────────────────────────────────────────────────────────
 COPY *.py .
 
-# ── Variables de entorno para silenciar logs de OpenCV/Qt ────────────────────
+# ── Variables de entorno ──────────────────────────────────────────────────────
 ENV OPENCV_LOG_LEVEL=SILENT
-ENV OPENCV_VIDEOIO_PRIORITY_MSMF=0
 ENV QT_AUTO_SCREEN_SCALE_FACTOR=1
-# En Raspberry Pi usar backend V4L2 (se detecta automáticamente en el código)
-
-# ── Carpeta de salida de videos ───────────────────────────────────────────────
-RUN mkdir -p /root/Videos/LabTREM
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
-# Con pantalla real: python main.py
-# Sin pantalla (headless): xvfb-run python main.py
-CMD ["python", "main.py"]
+CMD ["python3", "main.py"]
