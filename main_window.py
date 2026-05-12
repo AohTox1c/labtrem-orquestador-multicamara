@@ -713,16 +713,22 @@ class MainWindow(QMainWindow):
     def _open_output_dir(self) -> None:
         os.makedirs(self._output_dir, exist_ok=True)
         import subprocess
-        try:
-            if os.name == "nt":
+        if os.name == "nt":
+            try:
                 subprocess.Popen(["explorer", os.path.normpath(self._output_dir)])
-            else:
-                # Intentar abrir el gestor de archivos del host (funciona cuando el
-                # .desktop se lanza desde el escritorio con acceso al DISPLAY real)
-                subprocess.Popen(["xdg-open", self._output_dir])
-        except FileNotFoundError:
-            pass
-        # Siempre mostrar la ruta en la barra de estado
+            except Exception:
+                pass
+        else:
+            # Dentro de Docker no hay gestor de archivos — mostrar diálogo con la ruta
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Carpeta de videos")
+            msg.setText(
+                f"Los videos se guardan en:\n\n"
+                f"<b>{self._output_dir}</b>\n\n"
+                "Accede a esa ruta desde el explorador de archivos de la Raspberry Pi."
+            )
+            msg.setIcon(QMessageBox.Information)
+            msg.exec_()
         self._status_bar.showMessage(f"Carpeta de videos: {self._output_dir}")
 
     # ═════════════════════════════════════════════════════════════════════════

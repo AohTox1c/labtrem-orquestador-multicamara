@@ -5,6 +5,7 @@ Detecta cámaras disponibles en Windows y Linux/Raspberry Pi.
 import os
 import platform
 import subprocess
+import time
 
 import cv2
 
@@ -96,17 +97,20 @@ def _detect_linux() -> list[tuple[int, str]]:
 
         # Algunos dispositivos V4L2 no son cámaras de imagen (son metadata, etc.)
         # Intentar abrir con V4L2 y leer varios frames antes de descartar
-        cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
+        cap = cv2.VideoCapture(device_path, cv2.CAP_V4L2)
         if not cap.isOpened():
             cap.release()
             continue
 
         valid = False
-        for _ in range(6):
+        for _ in range(15):
             ret, frame = cap.read()
             if ret and frame is not None and frame.size > 0:
-                valid = True
-                break
+                h, w = frame.shape[:2]
+                if w > 0 and h > 0:
+                    valid = True
+                    break
+            time.sleep(0.05)
         cap.release()
 
         if valid:
