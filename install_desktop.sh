@@ -23,6 +23,8 @@ chmod +x "$REPO/launch_labtrem.sh"
 DESKTOP="$HOME/Desktop/LabTREM.desktop"
 cat > "$DESKTOP" << EOF
 [Desktop Entry]
+Version=1.0
+Encoding=UTF-8
 Name=LabTREM Orquestador
 Comment=Captura multicámara sincronizada
 Exec=$REPO/launch_labtrem.sh
@@ -35,9 +37,13 @@ EOF
 
 chmod +x "$DESKTOP"
 
-# 5. En algunos entornos (LXDE) hay que marcar el .desktop como "confiable"
+# 5. Marcar como confiable (LXDE/PCManFM/Wayfire)
 if command -v gio &>/dev/null; then
   gio set "$DESKTOP" "metadata::trusted" true 2>/dev/null || true
+fi
+# Fallback para entornos sin gio (xfce/lxde older)
+if command -v dbus-launch &>/dev/null; then
+  dbus-launch gio set "$DESKTOP" "metadata::trusted" true 2>/dev/null || true
 fi
 
 echo ""
