@@ -242,6 +242,9 @@ class MainWindow(QMainWindow):
         self._recording_paths: list[str] = []
         self._audio_recorder = AudioRecorder()
         self._spinners:  dict[str, _Spinner]   = {}
+        # Timer para finalización asíncrona de la grabación
+        self._finalize_timer: QTimer | None = None
+        self._finalize_data: tuple | None = None
         # En Linux (Raspberry Pi) usa el disco externo; en Windows, carpeta Videos
         if os.name == "nt":
             self._output_dir = os.path.join(os.path.expanduser("~"), "Videos", "LabTREM")
@@ -662,21 +665,16 @@ class MainWindow(QMainWindow):
 
     def _stop_recording(self) -> None:
         self._rec_timer.stop()
+        self._recording = False
 
+        # Señalizar fin de grabación a todos los hilos (no bloqueante)
         for key, thread in self._threads.items():
             thread.stop_recording()
             self._widgets[key].set_recording(False)
 
-        # Detener audio y mezclar con cada video si ffmpeg está disponible
-        wav_path = self._audio_recorder.stop()
-        if wav_path:
-            for vpath in self._recording_paths:
-                mux_audio_into_video(vpath, wav_path)
-            try:
-                import os as _os
-                _os.remove(wav_path)
-            except OSError:
-                pass
+        # Capturar datos ANTES de limpiar la lista
+        recording_paths = list(self._recording_paths)
+        n_files = len(recording_paths)
         self._recording_paths = []
 
         elapsed = ""
@@ -686,7 +684,46 @@ class MainWindow(QMainWindow):
             elapsed = f"  ({m:02d}:{s:02d})"
             self._rec_start = None
 
-        self._recording = False
+        # Deshabilitar botones mientras los encoders terminan de flushear
+        self._btn_record.setEnabled(False)
+        self._btn_stop.setEnabled(False)
+        self._btn_connect.setEnabled(False)
+        self._lbl_timer.setText("Guardando…")
+
+        # Guardar contexto para cuando todos los writers terminen
+        self._finalize_data = (recording_paths, n_files, elapsed)
+        active_threads = list(self._threads.values())
+
+        # Polling cada 200ms hasta que todos los _writer_closed estén activos
+        self._finalize_timer = QTimer(self)
+        self._finalize_timer.setInterval(200)
+        self._finalize_timer.timeout.connect(
+            lambda: self._check_writers_done(active_threads)
+        )
+        self._finalize_timer.start()
+
+    def _check_writers_done(self, active_threads: list) -> None:
+        """Comprueba si todos los hilos han cerrado su archivo MP4."""
+        if not all(t._writer_closed.is_set() for t in active_threads):
+            return  # Seguir esperando
+
+        self._finalize_timer.stop()
+        self._finalize_timer = None
+
+        recording_paths, n_files, elapsed = self._finalize_data
+        self._finalize_data = None
+
+        # Audio mux (rápido, el wav ya está listo)
+        wav_path = self._audio_recorder.stop()
+        if wav_path:
+            for vpath in recording_paths:
+                mux_audio_into_video(vpath, wav_path)
+            try:
+                os.remove(wav_path)
+            except OSError:
+                pass
+
+        # Restaurar UI
         self._btn_record.setEnabled(True)
         self._btn_stop.setEnabled(False)
         self._btn_connect.setEnabled(True)
@@ -694,11 +731,9 @@ class MainWindow(QMainWindow):
         self._status_bar.showMessage(
             f"Grabación finalizada{elapsed}.  Archivos en: {self._output_dir}"
         )
-
-        n = len(self._recording_paths)
         self._toast.show_message(
             f"Grabación guardada correctamente\n"
-            f"{n} archivo(s) en:\n{self._output_dir}",
+            f"{n_files} archivo(s) en:\n{self._output_dir}",
             duration_ms=6000,
         )
 
@@ -738,7 +773,8 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
         else:
-            for fm in ["pcmanfm", "thunar", "nautilus", "xdg-open"]:
+            # xdg-open delega al gestor del host via DBUS (tiene VLC asociado)
+            for fm in ["xdg-open", "pcmanfm", "thunar", "nautilus"]:
                 try:
                     subprocess.Popen([fm, self._output_dir])
                     self._status_bar.showMessage(f"Carpeta de videos: {self._output_dir}")

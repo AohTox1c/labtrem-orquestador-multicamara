@@ -48,6 +48,9 @@ class CameraThread(QThread):
         self._rec_t0       = 0.0    # tiempo de inicio de grabación (perf_counter)
         self._fps_int      = TARGET_FPS  # fps entero usado en el stream
         self._last_pts     = -1     # garantiza pts monotonicamente creciente
+        # Evento que se activa cuando _close_writer() termina (para UI no bloqueante)
+        self._writer_closed = threading.Event()
+        self._writer_closed.set()  # inicialmente "cerrado" (sin grabación activa)
 
     # ── Ciclo principal ───────────────────────────────────────────────────────
 
@@ -173,8 +176,10 @@ class CameraThread(QThread):
             stream.width   = w
             stream.height  = h
             stream.pix_fmt = "yuv420p"
-            # CRF 18 = alta calidad para análisis clínico
-            stream.options = {"crf": "18", "preset": "fast"}
+            # CRF 18 = alta calidad para análisis clínico.
+            # ultrafast: encoding ~5x más rápido que fast en ARM → el bucle
+            # de captura no se bloquea y los videos salen a 30fps reales.
+            stream.options = {"crf": "18", "preset": "ultrafast"}
             with self._lock:
                 self._container = container
                 self._av_stream = stream
@@ -186,10 +191,13 @@ class CameraThread(QThread):
             self.error_occurred.emit(f"No se pudo crear el video: {exc}")
 
     def stop_recording(self) -> None:
-        """Finaliza la grabación y cierra el archivo."""
+        """Señaliza el fin de grabación. El flush se hace en un hilo aparte
+        para no bloquear la UI. Consultar _writer_closed.is_set() para saber
+        cuándo el archivo MP4 está completamente cerrado."""
         with self._lock:
             self._recording = False
-        self._close_writer()
+        self._writer_closed.clear()
+        threading.Thread(target=self._close_writer, daemon=True).start()
 
     def _close_writer(self) -> None:
         with self._lock:
@@ -203,6 +211,7 @@ class CameraThread(QThread):
                     pass
                 self._container = None
                 self._av_stream = None
+        self._writer_closed.set()  # notifica que el archivo ya está cerrado
 
     # ── Bucle Picamera2 (cámara CSI Raspberry Pi) ─────────────────────────────
 
