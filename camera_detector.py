@@ -95,8 +95,11 @@ def _detect_linux() -> list[tuple[int, str]]:
         idx = int(device.replace("video", ""))
         device_path = f"/dev/{device}"
 
-        # Algunos dispositivos V4L2 no son cámaras de imagen (son metadata, etc.)
-        # Intentar abrir con V4L2 y leer varios frames antes de descartar
+        # Filtrar primero por capacidad VIDEO_CAPTURE — descarta nodos ISP,
+        # metadata, output y decodificadores de la Raspberry Pi (video0-7, 19-35)
+        if not _has_video_capture(device_path):
+            continue
+
         cap = cv2.VideoCapture(device_path, cv2.CAP_V4L2)
         if not cap.isOpened():
             cap.release()
@@ -118,6 +121,18 @@ def _detect_linux() -> list[tuple[int, str]]:
             cameras.append((idx, name))
 
     return cameras if cameras else _detect_generic(10)
+
+
+def _has_video_capture(device_path: str) -> bool:
+    """Retorna True solo si el dispositivo tiene capacidad VIDEO_CAPTURE."""
+    try:
+        result = subprocess.run(
+            ["v4l2-ctl", "--device", device_path, "--info"],
+            capture_output=True, text=True, timeout=2,
+        )
+        return "Video Capture" in result.stdout
+    except Exception:
+        return False
 
 
 def _get_v4l2_name(device_path: str) -> str | None:
