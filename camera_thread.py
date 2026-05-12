@@ -66,15 +66,24 @@ class CameraThread(QThread):
             self._running = False
             return
 
-        # MJPEG primero — V4L2 negocia el formato ANTES que la resolución.
-        # Si se pone después de width/height el driver ya fijó YUYV y lo ignora.
-        try:
-            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1920)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
-            cap.set(cv2.CAP_PROP_FPS, TARGET_FPS)
-        except Exception:
-            pass
+        # Intentar MJPEG a 1080p. Si el driver no lo acepta (fourcc devuelto ≠ MJPG)
+        # se cierra y reabre sin forzar formato — el driver elige lo que soporte.
+        MJPG = cv2.VideoWriter_fourcc(*'MJPG')
+        cap.set(cv2.CAP_PROP_FOURCC, MJPG)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1920)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+        cap.set(cv2.CAP_PROP_FPS, TARGET_FPS)
+
+        accepted = int(cap.get(cv2.CAP_PROP_FOURCC))
+        if accepted != MJPG:
+            # El driver rechazó MJPEG — reabrir con negociación automática
+            cap.release()
+            cap = cv2.VideoCapture(self.camera_index, _BACKEND)
+            if not cap.isOpened():
+                self.error_occurred.emit(f"No se pudo reabrir la cámara {self.camera_index}")
+                self.connected.emit(False)
+                self._running = False
+                return
 
         # FPS inicial del driver (se reemplazará con la medición real más abajo)
         fps = cap.get(cv2.CAP_PROP_FPS)
