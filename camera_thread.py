@@ -173,20 +173,12 @@ class CameraThread(QThread):
         t0 = rec_t0 if rec_t0 is not None else time.perf_counter()
         try:
             container = av.open(output_path, mode="w")
-            # Intentar encoder por hardware del RPi5 (VideoCore VII) → 0% CPU.
-            # Fallback automático a libx264 ultrafast si no disponible.
-            stream = None
-            if platform.system() == "Linux":
-                try:
-                    stream = container.add_stream("h264_v4l2m2m", rate=fps_int)
-                    stream.width, stream.height, stream.pix_fmt = w, h, "yuv420p"
-                    stream.options = {"b": "8000k" if h >= 1080 else "6000k"}
-                except Exception:
-                    stream = None
-            if stream is None:
-                stream = container.add_stream("h264", rate=fps_int)
-                stream.width, stream.height, stream.pix_fmt = w, h, "yuv420p"
-                stream.options = {"crf": "18", "preset": "ultrafast"}
+            stream = container.add_stream("h264", rate=fps_int)
+            stream.width   = w
+            stream.height  = h
+            stream.pix_fmt = "yuv420p"
+            # CRF 23 = buena calidad con menos CPU que CRF 18. ultrafast = mínima carga ARM.
+            stream.options = {"crf": "23", "preset": "ultrafast"}
 
             eq: queue.Queue = queue.Queue(maxsize=10)
             self._encode_queue = eq
@@ -231,8 +223,9 @@ class CameraThread(QThread):
                         if self._container is not None:
                             for packet in stream.encode(av_frame):
                                 container.mux(packet)
-                except Exception:
-                    pass
+                except Exception as enc_err:
+                    self.error_occurred.emit(f"Error encoding: {enc_err}")
+                    break  # abortar loop si el encoder falla — no seguir acumulando frames perdidos
         finally:
             # Flush y cerrar
             try:
