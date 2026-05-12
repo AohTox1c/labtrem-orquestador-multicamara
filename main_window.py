@@ -531,8 +531,10 @@ class MainWindow(QMainWindow):
         n = len(self._cameras)
         self._status_bar.showMessage(
             f"{n} cámara(s) detectada(s). Selecciónelas en los desplegables para iniciar la vista previa."
-        )        self._btn_refresh.setEnabled(True)
+        )
+        self._btn_refresh.setEnabled(True)
         self._btn_refresh.setText("Actualizar cámaras")
+
     def _on_camera_selected(self, key: str) -> None:
         """Conecta automáticamente la cámara elegida en el desplegable."""
         if key in self._threads:
