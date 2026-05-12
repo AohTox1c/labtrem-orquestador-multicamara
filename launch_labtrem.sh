@@ -1,13 +1,23 @@
 #!/bin/bash
-# launch_labtrem.sh — Arranca el contenedor LabTREM con acceso a display y cámaras
+# launch_labtrem.sh — Arranca el contenedor LabTREM
 
-# Permitir que Docker dibuje en el display X del usuario actual
-xhost +local:docker 2>/dev/null
+LOG="/tmp/labtrem_launch.log"
+exec > "$LOG" 2>&1
+
+# Asegurar DISPLAY
+export DISPLAY="${DISPLAY:-:0}"
+
+# Permitir que Docker dibuje en el display
+xhost +local:docker
+
+# Construir flags de dispositivos de video solo si existen
+VIDEO_FLAGS=""
+for dev in /dev/video0 /dev/video1 /dev/video2; do
+    [ -e "$dev" ] && VIDEO_FLAGS="$VIDEO_FLAGS --device $dev"
+done
 
 docker run --rm \
   -e DISPLAY="$DISPLAY" \
   -v /tmp/.X11-unix:/tmp/.X11-unix \
-  --device /dev/video0 \
-  --device /dev/video1 \
-  --device /dev/video2 \
+  $VIDEO_FLAGS \
   labtrem
