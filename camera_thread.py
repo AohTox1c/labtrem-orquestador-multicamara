@@ -172,13 +172,21 @@ class CameraThread(QThread):
         fps_int = int(round(max(5.0, min(60.0, self._actual_fps))))
         t0 = rec_t0 if rec_t0 is not None else time.perf_counter()
         try:
-            container = av.open(output_path, mode="w")
+            # frag_keyframe+empty_moov: MP4 fragmentado.
+            # Los metadatos se escriben a medida que graba → container.close() es INSTANTÁNEO.
+            # Sin esto, al parar escribe un moov de ~50MB por cámara al mismo tiempo → freeze.
+            container = av.open(output_path, mode="w",
+                                options={"movflags": "frag_keyframe+empty_moov"})
             stream = container.add_stream("h264", rate=fps_int)
             stream.width   = w
             stream.height  = h
             stream.pix_fmt = "yuv420p"
-            # CRF 23 = buena calidad con menos CPU que CRF 18. ultrafast = mínima carga ARM.
-            stream.options = {"crf": "23", "preset": "ultrafast"}
+            stream.options = {
+                "crf": "23",
+                "preset": "ultrafast",
+                "g": str(fps_int),        # keyframe cada 1 segundo = 1 fragmento/seg
+                "sc_threshold": "0",      # sin keyframes por cambio de escena (fragmentos predecibles)
+            }
 
             eq: queue.Queue = queue.Queue(maxsize=2)
             self._encode_queue = eq
@@ -235,10 +243,10 @@ class CameraThread(QThread):
                     self.error_occurred.emit(f"Error encoding: {enc_err}")
                     break
         finally:
-            # Flush del buffer interno del codec y cierre del archivo.
+            # Con frag_keyframe, ultrafast tiene 0 frames de delay → flush es no-op.
+            # Saltamos stream.encode() para evitar pico de CPU en el stop.
+            # container.close() escribe solo el cierre del fragmento actual → instantáneo.
             try:
-                for packet in stream.encode():
-                    container.mux(packet)
                 container.close()
             except Exception:
                 pass
