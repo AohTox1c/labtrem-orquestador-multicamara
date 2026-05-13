@@ -642,7 +642,7 @@ class MainWindow(QMainWindow):
 
     def _start_recording(self) -> None:
         os.makedirs(self._output_dir, exist_ok=True)
-        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        ts = datetime.datetime.now().strftime("%d%b_%Hh%M").lower()  # ej: 12may_14h30
         self._recording_paths = []
 
         # Capturar un único t0 compartido ANTES del loop → todos los videos
@@ -652,7 +652,8 @@ class MainWindow(QMainWindow):
 
         # Arrancar grabación en todos los hilos activos simultáneamente
         for key, thread in self._threads.items():
-            path = os.path.join(self._output_dir, f"{key}_{ts}.mp4")
+            cam_label = key.capitalize()  # cuidador → Cuidador, nino → Nino, panoramica → Panoramica
+            path = os.path.join(self._output_dir, f"{ts}_{cam_label}.mp4")
             self._recording_paths.append(path)
             thread.start_recording(path, rec_t0=rec_t0)
 
