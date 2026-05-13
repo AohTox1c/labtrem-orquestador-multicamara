@@ -20,10 +20,11 @@ _BACKEND = cv2.CAP_ANY if platform.system() == "Windows" else cv2.CAP_V4L2
 TARGET_WIDTH = 1920
 TARGET_HEIGHT = 1080
 TARGET_FPS = 30
-# C920: 720p@60fps es el máximo en MJPEG (1080p solo llega a 30fps).
+# C920: 720p@30fps. 60fps duplica el trabajo del encoder sin beneficio
+# apreciable para análisis conductual. 30fps libera ~1 núcleo ARM.
 USB_WIDTH  = 1280
 USB_HEIGHT = 720
-USB_FPS    = 60
+USB_FPS    = 30
 
 # Índices >= PICAMERA2_OFFSET → cámara CSI via Picamera2
 PICAMERA2_OFFSET = 1000
@@ -135,6 +136,7 @@ class CameraThread(QThread):
         self.connected.emit(True)
 
         consecutive_errors = 0
+        _preview_n = 0  # contador para throttle de preview a 15fps
         while self._running:
             ret, frame = cap.read()
             if not ret or frame is None:
@@ -146,16 +148,19 @@ class CameraThread(QThread):
                 continue
             consecutive_errors = 0
 
-            # Poner el frame en la cola del encoder (no bloqueante).
-            # El encoder corre en su propio hilo → cap.read() nunca espera al H.264.
+            # Grabación: todos los frames al encoder (no bloqueante).
             if self._encode_queue is not None:
                 ts = time.perf_counter()
                 try:
                     self._encode_queue.put_nowait((frame.copy(), ts))
                 except queue.Full:
-                    pass  # encoder va lento → descartar frame antes que bloquear
+                    pass
 
-            self.frame_ready.emit(_frame_to_pixmap(frame))
+            # Preview: 1 de cada 2 frames → 15fps en pantalla.
+            # QPixmap conversion es costosa en ARM; 15fps es fluido para monitoreo.
+            _preview_n += 1
+            if _preview_n % 2 == 0:
+                self.frame_ready.emit(_frame_to_pixmap(frame))
 
         cap.release()
         self._close_writer()
@@ -338,6 +343,7 @@ class CameraThread(QThread):
         self.connected.emit(True)
 
         consecutive_errors = 0
+        _preview_n = 0  # contador para throttle de preview a 15fps
         while self._running:
             try:
                 rgb = picam.capture_array("main")  # ya viene en RGB888
@@ -371,7 +377,10 @@ class CameraThread(QThread):
                 except queue.Full:
                     pass
 
-            self.frame_ready.emit(_frame_to_pixmap(bgr))
+            # Preview a 15fps (1 de cada 2 frames a 30fps).
+            _preview_n += 1
+            if _preview_n % 2 == 0:
+                self.frame_ready.emit(_frame_to_pixmap(bgr))
 
         picam.stop()
         picam.close()
