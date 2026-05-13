@@ -180,7 +180,7 @@ class CameraThread(QThread):
             # CRF 23 = buena calidad con menos CPU que CRF 18. ultrafast = mínima carga ARM.
             stream.options = {"crf": "23", "preset": "ultrafast"}
 
-            eq: queue.Queue = queue.Queue(maxsize=10)
+            eq: queue.Queue = queue.Queue(maxsize=2)
             self._encode_queue = eq
 
             with self._lock:
@@ -210,34 +210,41 @@ class CameraThread(QThread):
             while True:
                 item = eq.get()
                 if item is None:
-                    break  # sentinel → fin de grabación
+                    # Sentinel recibido: drenar la cola sin encodear para no saturar CPU en el stop.
+                    # Los frames pendientes son <0.1s de video (queue maxsize=2), pérdida inapreciable.
+                    try:
+                        while True:
+                            eq.get_nowait()
+                    except queue.Empty:
+                        pass
+                    break
                 frame_bgr, ts = item
+                # Sin lock durante encode: este hilo es el único escritor del container.
+                # El lock solo se toma al cerrar (ver finally), no en cada frame.
+                if self._container is None:
+                    continue
                 try:
-                    # V4L2 entrega BGR; Picamera2 también (RGB888 = BGR en bytes)
                     av_frame = av.VideoFrame.from_ndarray(frame_bgr, format="bgr24")
                     av_frame = av_frame.reformat(format="yuv420p")
                     raw_pts = int((ts - rec_t0) * fps_int)
                     av_frame.pts = max(raw_pts, last_pts + 1)
                     last_pts = av_frame.pts
-                    with self._lock:
-                        if self._container is not None:
-                            for packet in stream.encode(av_frame):
-                                container.mux(packet)
+                    for packet in stream.encode(av_frame):
+                        container.mux(packet)
                 except Exception as enc_err:
                     self.error_occurred.emit(f"Error encoding: {enc_err}")
-                    break  # abortar loop si el encoder falla — no seguir acumulando frames perdidos
+                    break
         finally:
-            # Flush y cerrar
+            # Flush del buffer interno del codec y cierre del archivo.
             try:
-                with self._lock:
-                    if self._container is not None:
-                        for packet in stream.encode():
-                            container.mux(packet)
-                        container.close()
-                        self._container = None
-                        self._av_stream = None
+                for packet in stream.encode():
+                    container.mux(packet)
+                container.close()
             except Exception:
                 pass
+            with self._lock:
+                self._container = None
+                self._av_stream = None
             self._writer_closed.set()
 
     def stop_recording(self) -> None:
