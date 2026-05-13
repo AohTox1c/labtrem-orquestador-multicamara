@@ -31,15 +31,15 @@ def draw_silhouette(painter: QPainter, rect: QRectF, silhouette_type: str) -> No
     painter.save()
     painter.setRenderHint(QPainter.Antialiasing)
     if silhouette_type == "adult":
-        _draw_figure(painter, rect, cx=0.50, top=0.08, scale=0.92, child=False)
+        _draw_figure(painter, rect, cx=0.50, top=0.28, scale=0.92, child=False)
     elif silhouette_type == "child":
-        _draw_figure(painter, rect, cx=0.50, top=0.14, scale=0.68, child=True)
+        _draw_figure(painter, rect, cx=0.50, top=0.32, scale=0.68, child=True)
     elif silhouette_type == "panoramic":
-        _draw_figure(painter, rect, cx=0.30, top=0.10, scale=0.72, child=False)
-        _draw_figure(painter, rect, cx=0.70, top=0.18, scale=0.56, child=True)
+        _draw_figure(painter, rect, cx=0.30, top=0.28, scale=0.72, child=False)
+        _draw_figure(painter, rect, cx=0.70, top=0.34, scale=0.56, child=True)
     elif silhouette_type == "panoramic_flipped":
-        _draw_figure(painter, rect, cx=0.30, top=0.18, scale=0.56, child=True)
-        _draw_figure(painter, rect, cx=0.70, top=0.10, scale=0.72, child=False)
+        _draw_figure(painter, rect, cx=0.30, top=0.34, scale=0.56, child=True)
+        _draw_figure(painter, rect, cx=0.70, top=0.28, scale=0.72, child=False)
     painter.restore()
 
 
